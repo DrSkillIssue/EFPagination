@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Keyset pagination for EF Core (Entity Framework Core). Also known as seek pagination or cursor pagination.</Description>
+
+    <AnalyzersAssemblyName>$(AssemblyName).Analyzers</AnalyzersAssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+  </ItemGroup>
+
+  <ItemGroup Label="Analyzers">
+     <ProjectReference Include="..\$(AnalyzersAssemblyName)\$(AnalyzersAssemblyName).csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

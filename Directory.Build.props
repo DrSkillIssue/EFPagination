@@ -1,0 +1,59 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <Product>EFPagination</Product>
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <UseSharedCompilation>false</UseSharedCompilation>
+    <NuGetAuditLevel>moderate</NuGetAuditLevel>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <EntityFrameworkCoreVersion>10.0.3</EntityFrameworkCoreVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <Version>1.0.0</Version>
+    <Authors>DrSkillIssue</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/DrSkillIssue/EFPagination</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/DrSkillIssue/EFPagination</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PublishWindowsPdb>false</PublishWindowsPdb>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageTags>entity-framework;ef-core;pagination;keyset;cursor;seek</PackageTags>
+    <PackageReleaseNotes>See https://github.com/DrSkillIssue/EFPagination/releases for release notes.</PackageReleaseNotes>
+    <PackageIconUrl>https://raw.githubusercontent.com/DrSkillIssue/EFPagination/main/Icon.jpg</PackageIconUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(CI)' != ''">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsPackable)' != 'false' and Exists('$(MSBuildThisFileDirectory)Icon.jpg')">
+    <PackageIcon>Icon.jpg</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false' and Exists('$(MSBuildThisFileDirectory)README.md')">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false' and Exists('$(MSBuildThisFileDirectory)Icon.jpg')">
+    <None Include="$(MSBuildThisFileDirectory)Icon.jpg" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

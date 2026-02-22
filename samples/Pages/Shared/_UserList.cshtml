@@ -1,0 +1,51 @@
+@model Sample.Pages.Shared.PageModelBase
+@{
+    string? pageName = ViewContext.RouteData.Values["page"]?.ToString() ?? "/Index";
+}
+
+@if (Model.Users.Count > 0)
+{
+    <div class="user-table">
+        <table class="table table-sm table-striped table-hover align-middle mb-2">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in Model.Users)
+                {
+                    <tr>
+                        <td class="text-muted">@user.Id</td>
+                        <td>@user.Name</td>
+                        <td>@user.Created.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="stats-bar">
+            <span>@Model.TotalCount.ToString("N0") total items</span>
+            <span>@Model.ElapsedMs ms query &middot; @Model.TotalElapsedMs ms total</span>
+        </div>
+
+        <hr class="my-2" />
+
+        <nav class="pagination-nav gap-2">
+            <a asp-page="@pageName" asp-route-first="true"
+               class="btn btn-outline-secondary btn-sm @(Model.HasPrevious ? "" : "disabled")">First</a>
+            <a asp-page="@pageName" asp-route-before="@Model.Users[0].Id"
+               class="btn btn-outline-secondary btn-sm @(Model.HasPrevious ? "" : "disabled")">Previous</a>
+            <a asp-page="@pageName" asp-route-after="@Model.Users[^1].Id"
+               class="btn btn-outline-primary btn-sm @(Model.HasNext ? "" : "disabled")">Next</a>
+            <a asp-page="@pageName" asp-route-last="true"
+               class="btn btn-outline-secondary btn-sm @(Model.HasNext ? "" : "disabled")">Last</a>
+        </nav>
+    </div>
+}
+else
+{
+    <div class="text-muted text-center py-5">No data</div>
+}

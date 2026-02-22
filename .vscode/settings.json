@@ -1,0 +1,20 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "ms-dotnettools.csharp",
+  "dotnet.enableWorkspaceBasedDevelopment": false,
+  "dotnet.solution.autoOpen": "EFPagination.sln",
+  "dotnet.defaultSolution": "EFPagination.sln",
+  "dotnet.backgroundAnalysis.analyzerDiagnosticsScope": "openFiles",
+  "dotnet.diagnostics.reportInformationAsHint": false,
+  "dotnet-test-explorer.testProjectPath": "**/*.sln",
+  "files.exclude": {
+    "samples/**": true
+  },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/obj/**": true,
+    "**/bin/**": true,
+    "**/node_modules/*/**": true
+  }
+}

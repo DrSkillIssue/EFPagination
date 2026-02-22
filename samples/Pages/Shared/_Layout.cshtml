@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EFPagination Sample</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-sm navbar-light bg-white border-bottom shadow-sm mb-4">
+            <div class="container">
+                <a class="navbar-brand" asp-page="/Index">EFPagination</a>
+                <div class="navbar-nav ms-auto gap-1">
+                    <a class="nav-link" asp-page="/Index">Prebuilt</a>
+                    <a class="nav-link" asp-page="/Composite">Composite</a>
+                    <a class="nav-link" asp-page="/Nested">Nested</a>
+                    <a class="nav-link" asp-page="/Nullable">Nullable</a>
+                    <a class="nav-link text-primary" href="/api/users" target="_blank">API (JSON)</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+    <main class="container pb-4">
+        @RenderBody()
+    </main>
+</body>
+</html>

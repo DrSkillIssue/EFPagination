@@ -26,4 +26,6 @@ public sealed class PaginationQueryDefinition<T>
     /// Gets the cached predicate template for this definition.
     /// </summary>
     internal CachedPredicateTemplate<T> PredicateTemplate { get; }
+
+    internal int ColumnCount => Columns.Length;
 }

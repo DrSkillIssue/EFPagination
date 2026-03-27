@@ -32,7 +32,7 @@ internal sealed class CachedPredicateTemplate<T>(
     /// <returns>A lambda expression suitable for use in a LINQ <c>Where</c> clause.</returns>
     public Expression<Func<T, bool>> Build(
         PaginationDirection direction,
-        object[] referenceValues)
+        object?[] referenceValues)
     {
         var template = GetTemplate(direction);
         return template.Instantiate(referenceValues);
@@ -137,7 +137,7 @@ internal sealed class CachedPredicateTemplate<T>(
         /// </summary>
         /// <param name="referenceValues">The column values to substitute, one per placeholder.</param>
         /// <returns>A ready-to-use lambda predicate expression.</returns>
-        public Expression<Func<T, bool>> Instantiate(object[] referenceValues)
+        public Expression<Func<T, bool>> Instantiate(object?[] referenceValues)
         {
             for (var i = 0; i < referenceValues.Length; i++)
             {
@@ -161,6 +161,9 @@ internal sealed class CachedPredicateTemplate<T>(
             PaginationColumn<T>[] columns,
             ReadOnlySpan<ColumnValue> values)
         {
+            if (TryPopulateFromPositionalValues(columns, values))
+                return _cachedLambda ??= BuildLambda();
+
             for (var i = 0; i < columns.Length; i++)
             {
                 var columnName = columns[i].GetRequiredPropertyNameForColumnValues();
@@ -180,6 +183,28 @@ internal sealed class CachedPredicateTemplate<T>(
             }
 
             return _cachedLambda ??= BuildLambda();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryPopulateFromPositionalValues(
+            PaginationColumn<T>[] columns,
+            ReadOnlySpan<ColumnValue> values)
+        {
+            if (values.Length != columns.Length)
+                return false;
+
+            for (var i = 0; i < columns.Length; i++)
+            {
+                if (!string.Equals(values[i].Name, columns[i].GetRequiredPropertyNameForColumnValues(), StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            for (var i = 0; i < columns.Length; i++)
+            {
+                _valueHolders[i].Value = values[i].Value;
+            }
+
+            return true;
         }
 
         private Expression<Func<T, bool>> BuildLambda()

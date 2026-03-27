@@ -131,27 +131,15 @@ public class PaginationCursorIntegrationTests
         ],
         new PaginationCursorOptions("created", firstPage.TotalCount));
 
-        var decoded = new[]
-        {
-            new ColumnValue(nameof(MainModel.Created), null),
-            new ColumnValue(nameof(MainModel.Id), null),
-        };
-
-        var success = PaginationCursor.TryDecode(cursor, decoded, out var written, out var sortBy, out var totalCount);
+        var success = PaginationCursor.TryDecode(cursor, definition, out var decoded, out var written, out var sortBy, out var totalCount);
 
         success.Should().BeTrue();
         written.Should().Be(2);
         sortBy.Should().Be("created");
         totalCount.Should().Be(firstPage.TotalCount);
 
-        var reference = new
-        {
-            Created = decoded[0].Value.Should().BeOfType<DateTime>().Subject,
-            Id = decoded[1].Value.Should().BeOfType<int>().Subject,
-        };
-
         var secondPage = await _dbContext.MainModels
-            .PaginateQuery(definition, PaginationDirection.Forward, reference)
+            .PaginateQuery(definition, PaginationDirection.Forward, decoded)
             .Take(10)
             .ToListAsync();
 
@@ -173,13 +161,46 @@ public class PaginationCursorIntegrationTests
         new PaginationCursorOptions("created", firstPage.TotalCount));
 
         var tamperedCursor = TamperCursorJson(validCursor, static json => json.Replace("\"c\":99", "\"c\":99}[]", StringComparison.Ordinal));
-        var decoded = new[]
-        {
-            new ColumnValue(nameof(MainModel.Created), null),
-            new ColumnValue(nameof(MainModel.Id), null),
-        };
+        PaginationCursor.TryDecode(tamperedCursor, definition, out PaginationValues<MainModel> _, out _, out _, out _).Should().BeFalse();
+    }
 
-        PaginationCursor.TryDecode(tamperedCursor, decoded, out _, out _, out _).Should().BeFalse();
+    [Fact]
+    public async Task TryDecode_DefinitionOverload_Feeds_Executor_Directly()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created).Ascending(x => x.Id));
+        var firstPage = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, null, includeCount: true);
+        var lastItem = firstPage.Items[^1];
+        var cursor = PaginationCursor.Encode(
+        [
+            new ColumnValue(nameof(MainModel.Created), lastItem.Created),
+            new ColumnValue(nameof(MainModel.Id), lastItem.Id),
+        ]);
+
+        var success = PaginationCursor.TryDecode(cursor, definition, out var values, out var written);
+
+        success.Should().BeTrue();
+        written.Should().Be(2);
+
+        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, includeCount: false, values);
+
+        page.Items.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(11, 10), options => options.WithStrictOrdering());
+        page.HasMore.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TryDecode_DefinitionOverload_Supports_ComputedColumns()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.CreatedNullable ?? DateTime.MinValue).Ascending(x => x.Id));
+        var cursor = PaginationCursor.Encode([new ColumnValue("CreatedNullable", DateTime.MinValue), new ColumnValue(nameof(MainModel.Id), 10)]);
+
+        var success = PaginationCursor.TryDecode(cursor, definition, out var values, out var written);
+
+        success.Should().BeTrue();
+        written.Should().Be(2);
+
+        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, includeCount: false, values);
+
+        page.Items.Should().NotBeEmpty();
     }
 
     private static string EncodeJson(string json)

@@ -7,6 +7,7 @@ This enables common patterns like:
 - Using DTOs or anonymous types as references (no entity load required)
 - Calling `HasNextAsync` on projected results
 - Building references from API query parameters
+- Rehydrating references from decoded `PaginationCursor` values
 
 ## Example: Anonymous Type Reference
 
@@ -52,6 +53,32 @@ app.MapGet("/api/users", async (AppDbContext db, DateTime? afterCreated, int? af
 
 See the [sample API endpoint](../samples/Endpoints/UsersApi.cs) for a complete working example.
 
+## Example: Decode a Cursor Into a Loose Reference
+
+```cs
+ColumnValue[] values =
+[
+    new(nameof(User.Created), null),
+    new(nameof(User.Id), null),
+];
+
+object? reference = null;
+
+if (!string.IsNullOrWhiteSpace(after) &&
+    PaginationCursor.TryDecode(after, values, out _))
+{
+    reference = new
+    {
+        Created = (DateTime)values[0].Value!,
+        Id = (int)values[1].Value!,
+    };
+}
+
+var context = dbContext.Users.Paginate(Definition, PaginationDirection.Forward, reference);
+```
+
+This keeps the transport token opaque while still using loose typing on the server side.
+
 ## Nested Properties
 
 When the definition uses nested properties, the reference must have matching nested structure:
@@ -77,6 +104,7 @@ var context = dbContext.Users.Paginate(definition, direction, reference);
 - Property names must match the pagination column names **exactly** (case-sensitive).
 - Property types must be compatible (same type or implicitly convertible).
 - Missing properties throw `IncompatibleReferenceException` with details about which property was expected and on which types.
+- For string-based definitions built with `PaginationQuery.Build<T>(string, ...)`, the loose reference must still expose the same property names as the resolved definition.
 
 ## See Also
 

@@ -5,7 +5,7 @@ namespace EFPagination;
 /// <summary>
 /// A prebuilt, reusable pagination query definition. Stores the pagination columns and a cached
 /// predicate template for efficient per-call expression tree instantiation.
-/// Build once via <see cref="PaginationQuery.Build{T}"/> and reuse across requests.
+/// Build once via <see cref="PaginationQuery.Build{T}(Action{PaginationBuilder{T}})"/> and reuse across requests.
 /// </summary>
 /// <typeparam name="T">The entity type.</typeparam>
 public sealed class PaginationQueryDefinition<T>

@@ -564,6 +564,36 @@ public abstract class PaginationTest
         prebuiltResult.Select(x => x.Id).Should().BeEquivalentTo(inlineResult.Select(x => x.Id));
     }
 
+    [Fact]
+    public async Task StringBuiltDefinition_MissingTiebreakerProperty_ThrowsIncompatibleReferenceException()
+    {
+        var definition = PaginationQuery.Build<MainModel>("Created", descending: false, tiebreaker: "Id", tiebreakerDescending: false);
+        var reference = new { Created = (await DbContext.MainModels.OrderBy(x => x.Created).FirstAsync()).Created };
+
+        var act = () => DbContext.MainModels
+            .PaginateQuery(definition, PaginationDirection.Forward, reference)
+            .Take(Size)
+            .ToListAsync();
+
+        var ex = await Assert.ThrowsAsync<IncompatibleReferenceException>(act);
+        ex.PropertyName.Should().Be("Id");
+    }
+
+    [Fact]
+    public async Task FilteredContext_HasPreviousAndHasNext_AreTrue_ForMiddlePage()
+    {
+        var filtered = DbContext.MainModels.Where(x => x.IsDone);
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var reference = await filtered.OrderBy(x => x.Id).Skip(9).FirstAsync();
+
+        var context = filtered.Paginate(definition, PaginationDirection.Forward, reference);
+        var items = await context.Query.Take(Size).ToListAsync();
+        context.EnsureCorrectOrder(items);
+
+        (await context.HasPreviousAsync(items)).Should().BeTrue();
+        (await context.HasNextAsync(items)).Should().BeTrue();
+    }
+
     private static void AssertResult(List<MainModel> expectedResult, List<MainModel> result)
     {
         result.Should().HaveCount(expectedResult.Count);

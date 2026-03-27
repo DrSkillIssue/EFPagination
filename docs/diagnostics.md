@@ -2,6 +2,8 @@
 
 This library ships with Roslyn analyzers that detect common misuse at build time.
 
+The analyzers apply equally to definitions built inline, prebuilt definitions, and runtime sort registries. If a `SortField<T>` points at a definition containing a nullable pagination column, the diagnostic is reported where that definition is created.
+
 ## Diagnostic Reference
 
 | ID | Severity | Title | Description |
@@ -42,6 +44,18 @@ b.Ascending(x => x.NullableDate ?? DateTime.MinValue);   // No diagnostic
 
 See [NULL Handling](null-handling.md#solution-2-expression-coalescing) for trade-offs.
 
+### Affected APIs
+
+`KP0001` can be reported from any call site that builds a definition with `PaginationBuilder<T>`:
+
+```cs
+PaginationQuery.Build<User>(b => b.Ascending(x => x.NullableDate));
+
+dbContext.Users.Paginate(b => b.Descending(x => x.NullableDate));
+```
+
+String-based definitions such as `PaginationQuery.Build<User>("Created", ...)` do not accept expressions, so they are not analyzer entry points. The nullability requirement still applies to the underlying property being used for pagination.
+
 ### Suppressing the Diagnostic
 
 If you have a valid reason to suppress (e.g., you guarantee the column is never null in practice):
@@ -62,4 +76,3 @@ dotnet_diagnostic.KP0001.severity = none
 ## See Also
 
 - [NULL Handling](null-handling.md) — Full explanation of the problem and solutions
-

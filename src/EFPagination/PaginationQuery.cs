@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using EFPagination.Internal;
 
 namespace EFPagination;
@@ -26,6 +27,34 @@ public static class PaginationQuery
     }
 
     /// <summary>
+    /// Builds a cached pagination query definition from a property name string.
+    /// The definition is built once per unique combination of parameters and cached for reuse.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="propertyName">The property name to sort by.</param>
+    /// <param name="descending">Whether the primary sort is descending.</param>
+    /// <param name="tiebreaker">Optional tiebreaker property name. Defaults to "Id".</param>
+    /// <param name="tiebreakerDescending">Whether the tiebreaker sort is descending.</param>
+    /// <returns>A cached, reusable pagination query definition.</returns>
+    public static PaginationQueryDefinition<T> Build<T>(
+        string propertyName,
+        bool descending,
+        string? tiebreaker = "Id",
+        bool tiebreakerDescending = false)
+    {
+        var key = (propertyName, descending, tiebreaker, tiebreakerDescending);
+        return DefinitionCache<T>.Cache.GetOrAdd(key, static k =>
+        {
+            var (prop, desc, tie, tieDesc) = k;
+            var builder = new PaginationBuilder<T>();
+            builder.Column(prop, desc);
+            if (tie is not null)
+                builder.Column(tie, tieDesc);
+            return new PaginationQueryDefinition<T>(builder.ColumnsArray);
+        });
+    }
+
+    /// <summary>
     /// Executes the builder action and returns the resulting columns as an array.
     /// </summary>
     /// <typeparam name="T">The entity type.</typeparam>
@@ -38,5 +67,10 @@ public static class PaginationQuery
         builderAction(builder);
 
         return builder.ColumnsArray;
+    }
+
+    private static class DefinitionCache<T>
+    {
+        internal static readonly ConcurrentDictionary<(string, bool, string?, bool), PaginationQueryDefinition<T>> Cache = new();
     }
 }

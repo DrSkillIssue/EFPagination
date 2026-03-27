@@ -15,6 +15,18 @@ private static readonly PaginationQueryDefinition<User> UserDefinition =
     PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
 ```
 
+You can also build a reusable definition from runtime property names:
+
+```cs
+var createdDescending = PaginationQuery.Build<User>(
+    propertyName: "Created",
+    descending: true,
+    tiebreaker: "Id",
+    tiebreakerDescending: false);
+```
+
+The string overload caches by `(T, propertyName, descending, tiebreaker, tiebreakerDescending)`, so repeated calls with the same inputs reuse the same definition instance.
+
 ## Using a Definition
 
 Pass it to `Paginate` instead of a builder action:
@@ -36,6 +48,29 @@ var context = dbContext.Users.Paginate(
 |----------|----------|
 | Prebuilt `PaginationQueryDefinition<T>` | Production code, API endpoints, repeated queries |
 | Inline builder action | Prototyping, tests, one-off queries |
+| String-based `Build<T>(...)` | User-selectable sort fields, admin grids, runtime sort configuration |
+
+## Sort Registries
+
+If callers can choose among several sort fields, register them once and resolve the right definition per request:
+
+```cs
+private static readonly PaginationSortRegistry<User> Sorts = new(
+    defaultDefinition: PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id)),
+    new SortField<User>(
+        "created",
+        PaginationQuery.Build<User>("Created", descending: false, tiebreaker: "Id"),
+        PaginationQuery.Build<User>("Created", descending: true, tiebreaker: "Id")),
+    new SortField<User>(
+        "name",
+        PaginationQuery.Build<User>("Name", descending: false, tiebreaker: "Id"),
+        PaginationQuery.Build<User>("Name", descending: true, tiebreaker: "Id")));
+
+var definition = Sorts.Resolve(sortBy, sortDir);
+var context = dbContext.Users.Paginate(definition, reference: cursorReference);
+```
+
+`Resolve` is case-insensitive for both field names and `desc`, and falls back to the default definition when the request asks for an unknown sort.
 
 ## See Also
 

@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Reflection;
 using EFPagination.Internal;
 
 namespace EFPagination;
@@ -10,6 +12,8 @@ namespace EFPagination;
 /// <typeparam name="T">The entity type.</typeparam>
 public sealed class PaginationBuilder<T>
 {
+    private static readonly ConcurrentDictionary<Type, Func<bool, LambdaExpression, PaginationColumn<T>>> s_columnFactories = new();
+
     private readonly List<PaginationColumn<T>> _columns = [];
 
     /// <summary>
@@ -48,5 +52,44 @@ public sealed class PaginationBuilder<T>
     {
         _columns.Add(new PaginationColumn<T, TColumn>(isDescending, columnExpression));
         return this;
+    }
+
+    internal PaginationBuilder<T> Column(string propertyName, bool isDescending)
+    {
+        var pi = typeof(T).GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)
+            ?? throw new ArgumentException($"Public instance property '{propertyName}' not found on type '{typeof(T).Name}'.", nameof(propertyName));
+
+        var param = Expression.Parameter(typeof(T), "x");
+        var property = Expression.Property(param, pi);
+        var delegateType = typeof(Func<,>).MakeGenericType(typeof(T), pi.PropertyType);
+        var lambda = Expression.Lambda(delegateType, property, param);
+
+        var factory = GetOrCreateColumnFactory(pi.PropertyType);
+        _columns.Add(factory(isDescending, lambda));
+        return this;
+    }
+
+    private static Func<bool, LambdaExpression, PaginationColumn<T>> GetOrCreateColumnFactory(Type columnType)
+    {
+        return s_columnFactories.GetOrAdd(columnType, static ct =>
+        {
+            var paginationColumnType = typeof(PaginationColumn<,>).MakeGenericType(typeof(T), ct);
+            var funcType = typeof(Func<,>).MakeGenericType(typeof(T), ct);
+            var exprType = typeof(Expression<>).MakeGenericType(funcType);
+
+            var ctor = paginationColumnType.GetConstructor(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                [typeof(bool), exprType])!;
+
+            var descParam = Expression.Parameter(typeof(bool), "desc");
+            var exprParam = Expression.Parameter(typeof(LambdaExpression), "expr");
+            var typedExpr = Expression.Convert(exprParam, exprType);
+
+            var newExpr = Expression.New(ctor, descParam, typedExpr);
+            var castExpr = Expression.Convert(newExpr, typeof(PaginationColumn<T>));
+
+            return Expression.Lambda<Func<bool, LambdaExpression, PaginationColumn<T>>>(
+                castExpr, descParam, exprParam).Compile();
+        });
     }
 }

@@ -11,6 +11,25 @@ public static class PaginationExecutor
         PaginationQueryDefinition<T> definition,
         int pageSize,
         bool includeCount,
+        PaginationValues<T> referenceValues,
+        CancellationToken ct = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(referenceValues);
+
+        return ExecuteCoreAsync(
+            query,
+            definition,
+            pageSize,
+            query.Paginate(definition, PaginationDirection.Forward, referenceValues),
+            includeCount,
+            ct);
+    }
+
+    public static Task<KeysetPage<T>> ExecuteAsync<T>(
+        IQueryable<T> query,
+        PaginationQueryDefinition<T> definition,
+        int pageSize,
+        bool includeCount,
         ReadOnlySpan<ColumnValue> referenceValues,
         CancellationToken ct = default) where T : class
     {
@@ -23,7 +42,7 @@ public static class PaginationExecutor
             ct);
     }
 
-    public static async Task<KeysetPage<T>> ExecuteAsync<T>(
+    public static Task<KeysetPage<T>> ExecuteAsync<T>(
         IQueryable<T> query,
         PaginationQueryDefinition<T> definition,
         int pageSize,
@@ -31,13 +50,13 @@ public static class PaginationExecutor
         bool includeCount,
         CancellationToken ct = default) where T : class
     {
-        return await ExecuteCoreAsync(
+        return ExecuteCoreAsync(
             query,
             definition,
             pageSize,
             query.Paginate(definition, PaginationDirection.Forward, reference),
             includeCount,
-            ct).ConfigureAwait(false);
+            ct);
     }
 
     private static async Task<KeysetPage<T>> ExecuteCoreAsync<T>(

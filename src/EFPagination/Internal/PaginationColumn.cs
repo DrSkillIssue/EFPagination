@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace EFPagination.Internal;
@@ -80,7 +81,44 @@ internal abstract class PaginationColumn<T>(
         if (body is not MemberExpression memberExpression)
             return null;
 
-        return memberExpression.Member.Name;
+        var segmentCount = 0;
+        var totalLength = 0;
+        Expression? current = memberExpression;
+
+        while (current is MemberExpression currentMember)
+        {
+            if (currentMember.Member is not PropertyInfo property)
+            {
+                throw new InvalidOperationException("Pagination column member-access chain must contain only properties.");
+            }
+
+            totalLength += property.Name.Length;
+            segmentCount++;
+            current = currentMember.Expression;
+        }
+
+        if (segmentCount == 1)
+            return ((PropertyInfo)memberExpression.Member).Name;
+
+        return string.Create(totalLength + segmentCount - 1, memberExpression, static (span, state) =>
+        {
+            WritePropertyPath(span, state, 0);
+        });
+    }
+
+    private static int WritePropertyPath(Span<char> destination, MemberExpression memberExpression, int position)
+    {
+        if (memberExpression.Expression is MemberExpression parent)
+        {
+            position = WritePropertyPath(destination, parent, position);
+            destination[position++] = '.';
+        }
+
+        var property = memberExpression.Member as PropertyInfo
+            ?? throw new InvalidOperationException("Pagination column member-access chain must contain only properties.");
+
+        property.Name.AsSpan().CopyTo(destination[position..]);
+        return position + property.Name.Length;
     }
 }
 

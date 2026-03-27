@@ -74,6 +74,13 @@ PaginationContext<T> Paginate<T, TReference>(
     PaginationDirection direction,
     TReference reference)
 
+// With definition-bound ordered values:
+PaginationContext<T> Paginate<T>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    PaginationValues<T> referenceValues)
+
 // With direct column values:
 PaginationContext<T> Paginate<T>(
     this IQueryable<T> source,
@@ -107,6 +114,13 @@ IQueryable<T> PaginateQuery<T, TReference>(
     PaginationQueryDefinition<T> queryDefinition,
     PaginationDirection direction,
     TReference reference)
+
+// With definition-bound ordered values:
+IQueryable<T> PaginateQuery<T>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    PaginationValues<T> referenceValues)
 
 // With direct column values:
 IQueryable<T> PaginateQuery<T>(
@@ -196,12 +210,21 @@ Task<KeysetPage<T>> ExecuteAsync<T>(
     PaginationQueryDefinition<T> definition,
     int pageSize,
     bool includeCount,
+    PaginationValues<T> referenceValues,
+    CancellationToken ct = default)
+    where T : class
+
+Task<KeysetPage<T>> ExecuteAsync<T>(
+    IQueryable<T> query,
+    PaginationQueryDefinition<T> definition,
+    int pageSize,
+    bool includeCount,
     ReadOnlySpan<ColumnValue> referenceValues,
     CancellationToken ct = default)
     where T : class
 ```
 
-Use the `ColumnValue` overload when you already have decoded keyset values and want to skip rebuilding an anonymous or DTO reference object.
+Use the `PaginationValues<T>` overload as the canonical high-performance path for definition-based cursor decoding. Use the `ColumnValue` overload only when you already have manual member-addressable name/value pairs.
 
 `KeysetPage<T>` contains:
 
@@ -224,11 +247,25 @@ bool TryDecode(
     out int written,
     out string? sortBy,
     out int? totalCount)
+bool TryDecode<T>(
+    ReadOnlySpan<char> encoded,
+    PaginationQueryDefinition<T> definition,
+    out PaginationValues<T> values,
+    out int written)
+bool TryDecode<T>(
+    ReadOnlySpan<char> encoded,
+    PaginationQueryDefinition<T> definition,
+    out PaginationValues<T> values,
+    out int written,
+    out string? sortBy,
+    out int? totalCount)
 ```
 
 Supported cursor value types include strings, booleans, numeric primitives, `Guid`, `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, and enums.
 
 `ColumnValue`-based pagination works for member-access definitions such as `x => x.Created` or `x => x.Id`. Computed expressions such as `x => x.CreatedNullable ?? DateTime.MinValue` remain supported through regular reference-object overloads, but they are not addressable by `ColumnValue.Name`.
+
+Use the definition-based `TryDecode` overload when you want a ready-to-use `PaginationValues<T>` container for `PaginationExecutor`, `Paginate`, or `PaginateQuery` without manually pre-populating column names.
 
 Example:
 
@@ -242,6 +279,16 @@ var nextCursor = PaginationCursor.Encode(
     new ColumnValue(nameof(User.Id), last.Id),
 ],
 new PaginationCursorOptions(TotalCount: page.TotalCount));
+
+if (PaginationCursor.TryDecode(nextCursor, definition, out var values, out _))
+{
+    var nextPage = await PaginationExecutor.ExecuteAsync(
+        dbContext.Users,
+        definition,
+        20,
+        includeCount: false,
+        values);
+}
 ```
 
 ### PaginationSortRegistry\<T\> / SortField\<T\>

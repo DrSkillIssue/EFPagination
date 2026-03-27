@@ -210,7 +210,53 @@ public static class PaginationCursor
         return TryDecode(encoded, values, out written, out _, out _);
     }
 
+    public static bool TryDecode<T>(
+        ReadOnlySpan<char> encoded,
+        PaginationQueryDefinition<T> definition,
+        out PaginationValues<T> values,
+        out int written)
+    {
+        return TryDecode(encoded, definition, out values, out written, out _, out _);
+    }
+
+    public static bool TryDecode<T>(
+        ReadOnlySpan<char> encoded,
+        PaginationQueryDefinition<T> definition,
+        out PaginationValues<T> values,
+        out int written,
+        out string? sortBy,
+        out int? totalCount)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+
+        var orderedValues = new object?[definition.ColumnCount];
+        if (TryDecodeOrdered(encoded, orderedValues, out written, out sortBy, out totalCount))
+        {
+            values = new PaginationValues<T>(orderedValues);
+            return true;
+        }
+
+        values = PaginationValues<T>.Empty;
+        return false;
+    }
+
     public static bool TryDecode(ReadOnlySpan<char> encoded, Span<ColumnValue> values, out int written, out string? sortBy, out int? totalCount)
+    {
+        return TryDecodeCore(encoded, values, null, out written, out sortBy, out totalCount);
+    }
+
+    private static bool TryDecodeOrdered(ReadOnlySpan<char> encoded, object?[] values, out int written, out string? sortBy, out int? totalCount)
+    {
+        return TryDecodeCore(encoded, default, values, out written, out sortBy, out totalCount);
+    }
+
+    private static bool TryDecodeCore(
+        ReadOnlySpan<char> encoded,
+        Span<ColumnValue> columnValues,
+        object?[]? orderedValues,
+        out int written,
+        out string? sortBy,
+        out int? totalCount)
     {
         written = 0;
         sortBy = null;
@@ -280,23 +326,13 @@ public static class PaginationCursor
                     if (sawValues || !reader.Read() || reader.TokenType != JsonTokenType.StartArray)
                         return false;
 
-                    var idx = 0;
-                    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                    if (!(orderedValues is not null
+                        ? TryReadOrderedValues(ref reader, orderedValues, out decodedValueCount)
+                        : TryReadColumnValues(ref reader, columnValues, out decodedValueCount)))
                     {
-                        if (!TryReadTypedValue(ref reader, out var val))
-                            return false;
-
-                        if (idx >= values.Length)
-                            return false;
-
-                        values[idx] = new ColumnValue(values[idx].Name, val);
-                        idx++;
+                        return false;
                     }
 
-                    if (reader.TokenType != JsonTokenType.EndArray)
-                        return false;
-
-                    decodedValueCount = idx;
                     sawValues = true;
                 }
                 else
@@ -344,6 +380,44 @@ public static class PaginationCursor
             if (rentedBuffer is not null)
                 ArrayPool<byte>.Shared.Return(rentedBuffer);
         }
+    }
+
+    private static bool TryReadColumnValues(ref Utf8JsonReader reader, Span<ColumnValue> values, out int written)
+    {
+        written = 0;
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (!TryReadTypedValue(ref reader, out var value))
+                return false;
+
+            if ((uint)written >= (uint)values.Length)
+                return false;
+
+            values[written] = new ColumnValue(values[written].Name, value);
+            written++;
+        }
+
+        return reader.TokenType == JsonTokenType.EndArray;
+    }
+
+    private static bool TryReadOrderedValues(ref Utf8JsonReader reader, object?[] values, out int written)
+    {
+        written = 0;
+
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (!TryReadTypedValue(ref reader, out var value))
+                return false;
+
+            if ((uint)written >= (uint)values.Length)
+                return false;
+
+            values[written] = value;
+            written++;
+        }
+
+        return reader.TokenType == JsonTokenType.EndArray;
     }
 
     private static void WriteEnumValue(Utf8JsonWriter writer, Enum value)

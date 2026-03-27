@@ -119,6 +119,13 @@ internal abstract class FilterPredicateStrategy : IFilterPredicateStrategy, IFil
         Expression[] referenceValueExpressions,
         ParameterExpression param) => BuildExpressionCore(columns, direction, referenceValueExpressions, param);
 
+    internal Expression BuildExpressionCoreInternal<T>(
+        PaginationColumn<T>[] columns,
+        PaginationDirection direction,
+        Expression[] referenceValueExpressions,
+        ParameterExpression param)
+        => BuildExpressionCore(columns, direction, referenceValueExpressions, param);
+
     /// <summary>
     /// Builds the predicate expression body. Implemented by each concrete strategy.
     /// </summary>
@@ -160,6 +167,7 @@ internal abstract class FilterPredicateStrategy : IFilterPredicateStrategy, IFil
         }
         return referenceValues;
     }
+
 
     /// <summary>
     /// Builds a comparison expression for a pagination column, using <c>CompareTo</c> for types

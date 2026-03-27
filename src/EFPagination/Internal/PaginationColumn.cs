@@ -29,6 +29,11 @@ internal abstract class PaginationColumn<T>(
     public Type Type => field ??= LambdaExpression.Body.Type;
 
     /// <summary>
+    /// Gets the property name for this column when it is directly addressable by name.
+    /// </summary>
+    public string? PropertyName { get; } = ResolvePropertyName(lambdaExpression);
+
+    /// <summary>
     /// Creates an expression that accesses this column's property using the given entity parameter.
     /// </summary>
     /// <param name="parameter">The entity parameter expression to bind to.</param>
@@ -59,6 +64,24 @@ internal abstract class PaginationColumn<T>(
     /// <param name="reference">The reference object to extract the value from.</param>
     /// <returns>The boxed column value.</returns>
     public abstract object ObtainValue<TReference>(TReference reference);
+
+    public string GetRequiredPropertyNameForColumnValues()
+    {
+        return PropertyName ?? throw new InvalidOperationException(
+            $"Direct column-value pagination only supports member-access columns. Expression '{LambdaExpression.Body}' is not addressable by column name.");
+    }
+
+    private static string? ResolvePropertyName(LambdaExpression lambda)
+    {
+        var body = lambda.Body;
+        if (body is UnaryExpression { NodeType: ExpressionType.Convert } unary)
+            body = unary.Operand;
+
+        if (body is not MemberExpression memberExpression)
+            return null;
+
+        return memberExpression.Member.Name;
+    }
 }
 
 /// <summary>

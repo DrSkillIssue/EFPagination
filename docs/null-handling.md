@@ -2,6 +2,12 @@
 
 Nullable columns are **not supported** in pagination definitions. The library ships with a [Roslyn analyzer](diagnostics.md) that detects this at build time.
 
+This restriction applies to all pagination entry points:
+
+- `PaginationQuery.Build<T>(b => ...)`
+- `query.Paginate(b => ...)`
+- definitions stored in `SortField<T>` / `PaginationSortRegistry<T>`
+
 ## Why?
 
 `NULL` has special semantics in SQL. You cannot compare against it with standard operators — any comparison with `NULL` evaluates to `UNKNOWN`, causing the entire `WHERE` clause to exclude the row. Different databases also sort `NULL` values differently (some treat it as smallest, others as largest), making pagination behavior unpredictable.
@@ -69,6 +75,8 @@ PaginationQuery.Build<User>(b =>
 ```
 
 This produces the same result as a computed column but **cannot be indexed**, which may impact performance on large tables.
+
+If you encode cursors with `PaginationCursor`, the cursor stores the evaluated non-null keyset value from the page boundary row. That makes cursor round-tripping safe, but it does not remove the need for a deterministic, non-null sortable expression in the definition itself.
 
 ## See Also
 

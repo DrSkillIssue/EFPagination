@@ -25,7 +25,7 @@ var context = dbContext.Users.Paginate(definition);
 var users = await context.Query.Take(20).ToListAsync();
 context.EnsureCorrectOrder(users);
 
-// Next page — pass the last item as a cursor.
+// Next page — pass the last item as the reference.
 var nextContext = dbContext.Users.Paginate(definition, PaginationDirection.Forward, users[^1]);
 var nextUsers = await nextContext.Query.Take(20).ToListAsync();
 nextContext.EnsureCorrectOrder(nextUsers);
@@ -34,6 +34,17 @@ nextContext.EnsureCorrectOrder(nextUsers);
 var hasPrevious = await nextContext.HasPreviousAsync(nextUsers);
 var hasNext = await nextContext.HasNextAsync(nextUsers);
 ```
+
+## What's Included
+
+- Prebuilt and inline keyset pagination over `IQueryable<T>`
+- Strongly-typed reference overloads to avoid loose-typing overhead
+- Runtime sort definitions via `PaginationQuery.Build<T>(string, ...)`
+- Opaque cursor token encoding/decoding with `PaginationCursor`
+- Direct `ColumnValue` pagination APIs for member-access definitions
+- Page execution with optional total-count retrieval via `PaginationExecutor`
+- Sort field registries for request-driven sorting via `PaginationSortRegistry<T>`
+- Roslyn analyzer support for nullable pagination columns
 
 ## API
 
@@ -55,6 +66,20 @@ PaginationContext<T> Paginate<T>(
     Action<PaginationBuilder<T>> builderAction,
     PaginationDirection direction = PaginationDirection.Forward,
     object? reference = null)
+
+// With a strongly-typed reference:
+PaginationContext<T> Paginate<T, TReference>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    TReference reference)
+
+// With direct column values:
+PaginationContext<T> Paginate<T>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    ReadOnlySpan<ColumnValue> referenceValues)
 ```
 
 ### PaginateQuery
@@ -75,6 +100,20 @@ IQueryable<T> PaginateQuery<T>(
     Action<PaginationBuilder<T>> builderAction,
     PaginationDirection direction = PaginationDirection.Forward,
     object? reference = null)
+
+// With a strongly-typed reference:
+IQueryable<T> PaginateQuery<T, TReference>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    TReference reference)
+
+// With direct column values:
+IQueryable<T> PaginateQuery<T>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    ReadOnlySpan<ColumnValue> referenceValues)
 ```
 
 ```cs
@@ -110,6 +149,22 @@ static readonly PaginationQueryDefinition<User> Definition =
     PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
 ```
 
+### PaginationQuery
+
+Factory for building reusable definitions:
+
+```cs
+PaginationQueryDefinition<T> Build<T>(Action<PaginationBuilder<T>> builderAction)
+
+PaginationQueryDefinition<T> Build<T>(
+    string propertyName,
+    bool descending,
+    string? tiebreaker = "Id",
+    bool tiebreakerDescending = false)
+```
+
+Use the string overload when sort fields come from request parameters or other runtime configuration.
+
 ### PaginationBuilder\<T\>
 
 Fluent builder for defining pagination columns, used inside `PaginationQuery.Build<T>()`:
@@ -121,6 +176,79 @@ Fluent builder for defining pagination columns, used inside `PaginationQuery.Bui
 | `ConfigureColumn<TCol>(Expression<Func<T, TCol>>, bool isDescending)` | Adds a column with explicit sort direction. Useful when the direction is dynamic. |
 
 Nested properties are supported: `b.Ascending(x => x.Details.Created)`.
+
+### PaginationExecutor / KeysetPage\<T\>
+
+Execute a page query and optionally fetch the total count:
+
+```cs
+Task<KeysetPage<T>> ExecuteAsync<T>(
+    IQueryable<T> query,
+    PaginationQueryDefinition<T> definition,
+    int pageSize,
+    object? reference,
+    bool includeCount,
+    CancellationToken ct = default)
+    where T : class
+```
+
+`KeysetPage<T>` contains:
+
+| Property | Description |
+|----------|-------------|
+| `Items` | The page items. |
+| `HasMore` | `true` when another page exists after the current page. |
+| `TotalCount` | Total rows when `includeCount` is `true`; otherwise `-1`. |
+
+### PaginationCursor / ColumnValue / PaginationCursorOptions
+
+Encode and decode opaque cursor tokens that preserve typed keyset values and optional metadata:
+
+```cs
+string Encode(ReadOnlySpan<ColumnValue> values, PaginationCursorOptions? options = null)
+bool TryDecode(ReadOnlySpan<char> encoded, Span<ColumnValue> values, out int written)
+bool TryDecode(
+    ReadOnlySpan<char> encoded,
+    Span<ColumnValue> values,
+    out int written,
+    out string? sortBy,
+    out int? totalCount)
+```
+
+Supported cursor value types include strings, booleans, numeric primitives, `Guid`, `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, and enums.
+
+`ColumnValue`-based pagination works for member-access definitions such as `x => x.Created` or `x => x.Id`. Computed expressions such as `x => x.CreatedNullable ?? DateTime.MinValue` remain supported through regular reference-object overloads, but they are not addressable by `ColumnValue.Name`.
+
+Example:
+
+```cs
+var page = await PaginationExecutor.ExecuteAsync(dbContext.Users, definition, 20, reference: null, includeCount: true);
+
+var last = page.Items[^1];
+var nextCursor = PaginationCursor.Encode(
+[
+    new ColumnValue(nameof(User.Created), last.Created),
+    new ColumnValue(nameof(User.Id), last.Id),
+],
+new PaginationCursorOptions(TotalCount: page.TotalCount));
+```
+
+### PaginationSortRegistry\<T\> / SortField\<T\>
+
+Map request sort names to prebuilt definitions:
+
+```cs
+var sorts = new PaginationSortRegistry<User>(
+    defaultDefinition: PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id)),
+    new SortField<User>(
+        "created",
+        PaginationQuery.Build<User>("Created", descending: false, tiebreaker: "Id"),
+        PaginationQuery.Build<User>("Created", descending: true, tiebreaker: "Id")));
+
+var definition = sorts.Resolve(sortBy, sortDir);
+```
+
+`Resolve` is case-insensitive and falls back to the default definition when the requested sort field is empty or unknown.
 
 ### IncompatibleReferenceException
 
@@ -147,7 +275,7 @@ enum PaginationDirection { Forward, Backward }
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Installation, requirements, first query |
 | [Pagination Patterns](docs/patterns.md) | First, last, previous, next page patterns |
-| [API Reference](docs/api-reference.md) | Full API details, nested properties, exceptions |
+| [API Reference](docs/api-reference.md) | Full API details, including cursor, executor, and sort-registry APIs |
 | [Prebuilt Definitions](docs/prebuilt-definitions.md) | Caching pagination definitions for performance |
 | [Database Indexing](docs/indexing.md) | Composite indexes, deterministic definitions |
 | [NULL Handling](docs/null-handling.md) | Computed columns, expression coalescing |
@@ -156,7 +284,7 @@ enum PaginationDirection { Forward, Backward }
 
 ## Samples
 
-The [samples](samples) directory contains a Razor Pages demo with four pagination variations and a Minimal API endpoint showcasing loose typing with JSON cursor tokens.
+The [samples](samples) directory contains a Razor Pages demo with four pagination variations and a Minimal API endpoint showcasing loose typing with opaque cursor tokens.
 
 ## License
 

@@ -97,6 +97,60 @@ public async Task<PagedResult> GetUsersAsync(int? afterId, int? beforeId)
 }
 ```
 
+## Cursor Token Pattern
+
+For API responses, encode the last row's keyset values into a cursor token instead of exposing raw query parameters:
+
+```cs
+private static readonly PaginationQueryDefinition<User> Definition =
+    PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
+
+public async Task<object> GetUsersAsync(string? after)
+{
+    object? reference = null;
+    int? totalCountFromCursor = null;
+    ColumnValue[] values =
+    [
+        new(nameof(User.Created), null),
+        new(nameof(User.Id), null),
+    ];
+
+    if (!string.IsNullOrWhiteSpace(after) &&
+        PaginationCursor.TryDecode(after, values, out _, out _, out var totalCount))
+    {
+        reference = new
+        {
+            Created = (DateTime)values[0].Value!,
+            Id = (int)values[1].Value!,
+        };
+        totalCountFromCursor = totalCount;
+    }
+
+    var page = await PaginationExecutor.ExecuteAsync(
+        dbContext.Users,
+        Definition,
+        pageSize: 20,
+        reference,
+        includeCount: reference is null);
+
+    string? nextCursor = null;
+    if (page.HasMore)
+    {
+        var last = page.Items[^1];
+        nextCursor = PaginationCursor.Encode(
+        [
+            new(nameof(User.Created), last.Created),
+            new(nameof(User.Id), last.Id),
+        ],
+        new PaginationCursorOptions(TotalCount: page.TotalCount >= 0 ? page.TotalCount : totalCountFromCursor));
+    }
+
+    return new { page.Items, page.HasMore, NextCursor = nextCursor };
+}
+```
+
+This pattern keeps the HTTP contract opaque while still preserving type-safe keyset values, sort metadata, and optional total-count metadata.
+
 ## See Also
 
 - [API Reference](api-reference.md) — Full method signatures and return types

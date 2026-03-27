@@ -30,6 +30,18 @@ modelBuilder.Entity<User>()
     .IsDescending(true, false); // Created DESC, Id ASC
 ```
 
+The same rule applies when the definition is built from strings at runtime:
+
+```cs
+var definition = PaginationQuery.Build<User>(
+    propertyName: "Created",
+    descending: true,
+    tiebreaker: "Id",
+    tiebreakerDescending: false);
+```
+
+That definition still needs the same `(Created DESC, Id ASC)` database index.
+
 ## Deterministic Definitions
 
 A **deterministic definition** uniquely identifies every row. This is critical for correct pagination.
@@ -52,6 +64,8 @@ b.Ascending(x => x.Created).Ascending(x => x.Id)
 
 The combination of `Created` + `Id` is deterministic because `Id` is unique. This guarantees **stable pagination**: no rows are skipped or duplicated across pages.
 
+This is especially important for cursor tokens. `PaginationCursor` preserves the exact keyset values from the last row on the page; if the definition is not deterministic, a valid cursor can still skip or duplicate rows because the sort itself is ambiguous.
+
 ### When Is This Not Needed?
 
 If the first column is already unique (e.g., an auto-increment `Id`), a single-column definition is deterministic by itself:
@@ -73,3 +87,4 @@ b.Ascending(x => x.Id)
 
 - [NULL Handling](null-handling.md) — Indexing computed columns for nullable columns
 - [Prebuilt Definitions](prebuilt-definitions.md) — Reducing per-query overhead
+- [API Reference](api-reference.md#paginationcursor) — Cursor encoding and decoding

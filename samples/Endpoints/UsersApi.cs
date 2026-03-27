@@ -9,7 +9,7 @@ namespace Sample.Endpoints;
 /// </summary>
 public static class UsersApi
 {
-    private static readonly PaginationQueryDefinition<User> _definition =
+    private static readonly PaginationQueryDefinition<User> s_definition =
         PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
 
     public static void MapUsersApi(this WebApplication app)
@@ -43,7 +43,7 @@ public static class UsersApi
                 reference = new { Created = beforeCreated.Value, Id = beforeId.Value };
             }
 
-            var context = query.Paginate(_definition, direction, reference);
+            var context = query.Paginate(s_definition, direction, reference);
 
             var users = await context.Query
                 .Take(pageSize)

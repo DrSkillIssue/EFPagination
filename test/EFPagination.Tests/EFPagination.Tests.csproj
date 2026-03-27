@@ -7,12 +7,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EFPagination\EFPagination.csproj" />
+    <ProjectReference Include="..\..\src\EFPagination.Analyzers\EFPagination.Analyzers.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
 
 </Project>

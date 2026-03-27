@@ -564,6 +564,91 @@ public abstract class PaginationTest
         prebuiltResult.Select(x => x.Id).Should().BeEquivalentTo(inlineResult.Select(x => x.Id));
     }
 
+    [Fact]
+    public async Task StringBuiltDefinition_MissingTiebreakerProperty_ThrowsIncompatibleReferenceException()
+    {
+        var definition = PaginationQuery.Build<MainModel>("Created", descending: false, tiebreaker: "Id", tiebreakerDescending: false);
+        var createdValue = (await DbContext.MainModels.OrderBy(x => x.Created).FirstAsync()).Created;
+        var reference = new { Created = createdValue };
+
+        var act = () => DbContext.MainModels
+            .PaginateQuery(definition, PaginationDirection.Forward, reference)
+            .Take(Size)
+            .ToListAsync();
+
+        var ex = await Assert.ThrowsAsync<IncompatibleReferenceException>(act);
+        ex.PropertyName.Should().Be("Id");
+    }
+
+    [Fact]
+    public async Task FilteredContext_HasPreviousAndHasNext_AreTrue_ForMiddlePage()
+    {
+        var filtered = DbContext.MainModels.Where(x => x.IsDone);
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var reference = await filtered.OrderBy(x => x.Id).Skip(9).FirstAsync();
+
+        var context = filtered.Paginate(definition, PaginationDirection.Forward, reference);
+        var items = await context.Query.Take(Size).ToListAsync();
+        context.EnsureCorrectOrder(items);
+
+        (await context.HasPreviousAsync(items)).Should().BeTrue();
+        (await context.HasNextAsync(items)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task PrebuiltDefinition_Supports_StructReference_WithoutLooseTypingBoxingPath()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+
+        var result = await DbContext.MainModels
+            .PaginateQuery(definition, PaginationDirection.Forward, new MainModelIdReference(10))
+            .Take(Size)
+            .ToListAsync();
+
+        result.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(11, Size));
+    }
+
+    [Fact]
+    public async Task PrebuiltDefinition_Supports_DirectColumnValues()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created).Ascending(x => x.Id));
+        var reference = await DbContext.MainModels.OrderBy(x => x.Created).ThenBy(x => x.Id).Skip(Size - 1).FirstAsync();
+
+        ColumnValue[] referenceValues =
+        [
+            new(nameof(MainModel.Id), reference.Id),
+            new(nameof(MainModel.Created), reference.Created),
+        ];
+
+        var result = await DbContext.MainModels
+            .PaginateQuery(definition, PaginationDirection.Forward, referenceValues)
+            .Take(Size)
+            .ToListAsync();
+
+        result.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(11, Size));
+    }
+
+    [Fact]
+    public async Task DirectColumnValues_Reject_ComputedColumns()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.CreatedNullable ?? DateTime.MinValue).Ascending(x => x.Id));
+        ColumnValue[] referenceValues =
+        [
+            new(nameof(MainModel.CreatedNullable), DateTime.MinValue),
+            new(nameof(MainModel.Id), 10),
+        ];
+
+        var act = () => DbContext.MainModels
+            .PaginateQuery(definition, PaginationDirection.Forward, referenceValues)
+            .Take(Size)
+            .ToListAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Direct column-value pagination only supports member-access columns*");
+    }
+
+    private readonly record struct MainModelIdReference(int Id);
+
     private static void AssertResult(List<MainModel> expectedResult, List<MainModel> result)
     {
         result.Should().HaveCount(expectedResult.Count);

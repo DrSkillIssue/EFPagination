@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Runtime.InteropServices;
 using EFPagination.Internal;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,6 +42,65 @@ public static class PaginationExtensions
     }
 
     /// <summary>
+    /// Paginates using keyset pagination with a strongly-typed reference object.
+    /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <typeparam name="TReference">The type of the reference object.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
+    /// <returns>An object containing the modified queryable.</returns>
+    public static PaginationContext<T> Paginate<T, TReference>(
+        this IQueryable<T> source,
+        PaginationQueryDefinition<T> queryDefinition,
+        PaginationDirection direction,
+        TReference reference)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(queryDefinition);
+        ArgumentNullException.ThrowIfNull(reference);
+
+        return source.Paginate(queryDefinition.Columns, direction, reference, queryDefinition.PredicateTemplate);
+    }
+
+    /// <summary>
+    /// Paginates using keyset pagination with direct column values.
+    /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The column values to use as the pagination reference.</param>
+    /// <returns>An object containing the modified queryable.</returns>
+    public static PaginationContext<T> Paginate<T>(
+        this IQueryable<T> source,
+        PaginationQueryDefinition<T> queryDefinition,
+        PaginationDirection direction,
+        ReadOnlySpan<ColumnValue> referenceValues)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(queryDefinition);
+
+        return source.Paginate(queryDefinition.Columns, direction, referenceValues, queryDefinition.PredicateTemplate);
+    }
+
+    /// <summary>
+    /// Paginates using keyset pagination with direct column values.
+    /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The column values to use as the pagination reference.</param>
+    /// <returns>An object containing the modified queryable.</returns>
+    public static PaginationContext<T> Paginate<T>(
+        this IQueryable<T> source,
+        PaginationQueryDefinition<T> queryDefinition,
+        PaginationDirection direction,
+        ColumnValue[] referenceValues) => Paginate(source, queryDefinition, direction, referenceValues.AsSpan());
+
+    /// <summary>
     /// Paginates using keyset pagination.
     /// </summary>
     /// <typeparam name="T">The type of the entity.</typeparam>
@@ -65,6 +125,30 @@ public static class PaginationExtensions
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(builderAction);
+
+        var columns = PaginationQuery.BuildColumns(builderAction);
+        return source.Paginate(columns, direction, reference);
+    }
+
+    /// <summary>
+    /// Paginates using keyset pagination with an inline builder and strongly-typed reference object.
+    /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <typeparam name="TReference">The type of the reference object.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="builderAction">An action that configures the pagination columns.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
+    /// <returns>An object containing the modified queryable.</returns>
+    public static PaginationContext<T> Paginate<T, TReference>(
+        this IQueryable<T> source,
+        Action<PaginationBuilder<T>> builderAction,
+        PaginationDirection direction,
+        TReference reference)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(builderAction);
+        ArgumentNullException.ThrowIfNull(reference);
 
         var columns = PaginationQuery.BuildColumns(builderAction);
         return source.Paginate(columns, direction, reference);
@@ -106,6 +190,79 @@ public static class PaginationExtensions
         return new PaginationContext<T>(filteredQuery, orderedQuery, columns, direction, predicateTemplate);
     }
 
+    private static PaginationContext<T> Paginate<T, TReference>(
+        this IQueryable<T> source,
+        PaginationColumn<T>[] columns,
+        PaginationDirection direction,
+        TReference reference,
+        CachedPredicateTemplate<T>? predicateTemplate = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(reference);
+
+        if (columns.Length == 0)
+        {
+            throw new InvalidOperationException("There should be at least one configured column in the pagination definition.");
+        }
+
+        var orderedQuery = columns[0].ApplyOrderBy(source, direction);
+        for (var i = 1; i < columns.Length; i++)
+        {
+            orderedQuery = columns[i].ApplyThenOrderBy(orderedQuery, direction);
+        }
+
+        var filterPredicate = predicateTemplate is not null
+            ? BuildFilterPredicateExpressionCached(predicateTemplate, columns, direction, reference)
+            : BuildFilterPredicateExpression(columns, direction, reference);
+        var filteredQuery = orderedQuery.Where(filterPredicate);
+
+        return new PaginationContext<T>(filteredQuery, orderedQuery, columns, direction, predicateTemplate);
+    }
+
+    private static PaginationContext<T> Paginate<T>(
+        this IQueryable<T> source,
+        PaginationColumn<T>[] columns,
+        PaginationDirection direction,
+        ReadOnlySpan<ColumnValue> referenceValues,
+        CachedPredicateTemplate<T>? predicateTemplate = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        if (columns.Length == 0)
+        {
+            throw new InvalidOperationException("There should be at least one configured column in the pagination definition.");
+        }
+
+        var orderedQuery = columns[0].ApplyOrderBy(source, direction);
+        for (var i = 1; i < columns.Length; i++)
+        {
+            orderedQuery = columns[i].ApplyThenOrderBy(orderedQuery, direction);
+        }
+
+        IQueryable<T> filteredQuery = orderedQuery;
+        if (!referenceValues.IsEmpty)
+        {
+            Expression<Func<T, bool>> filterPredicate;
+
+            if (predicateTemplate is not null)
+            {
+                var template = direction == PaginationDirection.Forward
+                    ? predicateTemplate.ForwardTemplate
+                    : predicateTemplate.BackwardTemplate;
+                filterPredicate = template.InstantiateFromColumnValues(columns, referenceValues);
+            }
+            else
+            {
+                var orderedValues = OrderValuesByColumns(columns, referenceValues);
+                filterPredicate = BuildFilterPredicateExpressionFromValues(columns, direction, orderedValues);
+            }
+
+            filteredQuery = filteredQuery.Where(filterPredicate);
+        }
+
+        return new PaginationContext<T>(filteredQuery, orderedQuery, columns, direction, predicateTemplate);
+    }
+
     /// <summary>
     /// Paginates using keyset pagination.
     /// </summary>
@@ -130,6 +287,39 @@ public static class PaginationExtensions
         object? reference = null) => Paginate(source, queryDefinition, direction, reference).Query;
 
     /// <summary>
+    /// Paginates using keyset pagination with a strongly-typed reference object and returns the query directly.
+    /// </summary>
+    public static IQueryable<T> PaginateQuery<T, TReference>(
+        this IQueryable<T> source,
+        PaginationQueryDefinition<T> queryDefinition,
+        PaginationDirection direction,
+        TReference reference) => Paginate(source, queryDefinition, direction, reference).Query;
+
+    /// <summary>
+    /// Paginates using keyset pagination with direct column values and returns the query directly.
+    /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The column values to use as the pagination reference.</param>
+    /// <returns>The modified queryable.</returns>
+    public static IQueryable<T> PaginateQuery<T>(
+        this IQueryable<T> source,
+        PaginationQueryDefinition<T> queryDefinition,
+        PaginationDirection direction,
+        ReadOnlySpan<ColumnValue> referenceValues) => Paginate(source, queryDefinition, direction, referenceValues).Query;
+
+    /// <summary>
+    /// Paginates using keyset pagination with direct column values from an array, then returns the query directly.
+    /// </summary>
+    public static IQueryable<T> PaginateQuery<T>(
+        this IQueryable<T> source,
+        PaginationQueryDefinition<T> queryDefinition,
+        PaginationDirection direction,
+        ColumnValue[] referenceValues) => Paginate(source, queryDefinition, direction, referenceValues).Query;
+
+    /// <summary>
     /// Paginates using keyset pagination.
     /// </summary>
     /// <typeparam name="T">The type of the entity.</typeparam>
@@ -151,6 +341,15 @@ public static class PaginationExtensions
         Action<PaginationBuilder<T>> builderAction,
         PaginationDirection direction = PaginationDirection.Forward,
         object? reference = null) => Paginate(source, builderAction, direction, reference).Query;
+
+    /// <summary>
+    /// Paginates using keyset pagination with an inline builder and strongly-typed reference object, then returns the query directly.
+    /// </summary>
+    public static IQueryable<T> PaginateQuery<T, TReference>(
+        this IQueryable<T> source,
+        Action<PaginationBuilder<T>> builderAction,
+        PaginationDirection direction,
+        TReference reference) => Paginate(source, builderAction, direction, reference).Query;
 
     /// <summary>
     /// Returns true when there is more data before the list.
@@ -208,10 +407,10 @@ public static class PaginationExtensions
         return HasAsync(context, PaginationDirection.Forward, reference);
     }
 
-    private static Task<bool> HasAsync<T>(
+    private static Task<bool> HasAsync<T, TReference>(
         this PaginationContext<T> context,
         PaginationDirection direction,
-        object reference)
+        TReference reference)
     {
         var lambda = context.PredicateTemplate is not null
             ? BuildFilterPredicateExpressionCached(context.PredicateTemplate, context.Columns, direction, reference)
@@ -240,9 +439,16 @@ public static class PaginationExtensions
 
         if (context.Direction == PaginationDirection.Backward)
         {
-            for (int i = 0, j = data.Count - 1; i < j; i++, j--)
+            if (data is List<T2> list)
             {
-                (data[i], data[j]) = (data[j], data[i]);
+                CollectionsMarshal.AsSpan(list).Reverse();
+            }
+            else
+            {
+                for (int i = 0, j = data.Count - 1; i < j; i++, j--)
+                {
+                    (data[i], data[j]) = (data[j], data[i]);
+                }
             }
         }
     }
@@ -258,13 +464,86 @@ public static class PaginationExtensions
             reference);
     }
 
+    private static Expression<Func<T, bool>> BuildFilterPredicateExpression<T, TReference>(
+        PaginationColumn<T>[] columns,
+        PaginationDirection direction,
+        TReference reference)
+    {
+        var referenceValueBodies = new Expression[columns.Length];
+        for (var i = 0; i < columns.Length; i++)
+        {
+            var holder = new ValueHolder { Value = columns[i].ObtainValue(reference) };
+            referenceValueBodies[i] = Expression.Field(
+                Expression.Constant(holder), ValueHolder.ValueField);
+        }
+
+        var param = Expression.Parameter(typeof(T), "entity");
+        var finalExpression = FilterPredicateStrategy.Default.BuildExpressionCoreInternal(
+            columns, direction, referenceValueBodies, param);
+        return Expression.Lambda<Func<T, bool>>(finalExpression, param);
+    }
+
+    private static object?[] OrderValuesByColumns<T>(
+        PaginationColumn<T>[] columns,
+        ReadOnlySpan<ColumnValue> referenceValues)
+    {
+        var ordered = new object?[columns.Length];
+        for (var i = 0; i < columns.Length; i++)
+        {
+            var columnName = columns[i].GetRequiredPropertyNameForColumnValues();
+            var found = false;
+            for (var j = 0; j < referenceValues.Length; j++)
+            {
+                if (string.Equals(referenceValues[j].Name, columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    ordered[i] = referenceValues[j].Value;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+                throw new ArgumentException(
+                    $"No value provided for pagination column '{columnName}'.", nameof(referenceValues));
+        }
+
+        return ordered;
+    }
+
+    private static Expression<Func<T, bool>> BuildFilterPredicateExpressionFromValues<T>(
+        PaginationColumn<T>[] columns,
+        PaginationDirection direction,
+        object?[] orderedValues)
+    {
+        var referenceValueBodies = new Expression[orderedValues.Length];
+        for (var i = 0; i < orderedValues.Length; i++)
+        {
+            var holder = new ValueHolder { Value = orderedValues[i] };
+            referenceValueBodies[i] = Expression.Field(
+                Expression.Constant(holder), ValueHolder.ValueField);
+        }
+
+        var param = Expression.Parameter(typeof(T), "entity");
+        var finalExpression = FilterPredicateStrategy.Default.BuildExpressionCoreInternal(
+            columns, direction, referenceValueBodies, param);
+        return Expression.Lambda<Func<T, bool>>(finalExpression, param);
+    }
+
+    private static Expression<Func<T, bool>> BuildFilterPredicateExpressionCached<T, TReference>(
+        CachedPredicateTemplate<T> template,
+        PaginationColumn<T>[] columns,
+        PaginationDirection direction,
+        TReference reference)
+    {
+        return template.Build(direction, columns, reference);
+    }
+
     private static Expression<Func<T, bool>> BuildFilterPredicateExpressionCached<T>(
         CachedPredicateTemplate<T> template,
         PaginationColumn<T>[] columns,
         PaginationDirection direction,
         object reference)
     {
-        var referenceValues = FilterPredicateStrategy.GetValues(columns, reference);
-        return template.Build(direction, referenceValues);
+        return template.Build(direction, columns, reference);
     }
 }

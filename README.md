@@ -38,8 +38,10 @@ var hasNext = await nextContext.HasNextAsync(nextUsers);
 ## What's Included
 
 - Prebuilt and inline keyset pagination over `IQueryable<T>`
+- Strongly-typed reference overloads to avoid loose-typing overhead
 - Runtime sort definitions via `PaginationQuery.Build<T>(string, ...)`
 - Opaque cursor token encoding/decoding with `PaginationCursor`
+- Direct `ColumnValue` pagination APIs for member-access definitions
 - Page execution with optional total-count retrieval via `PaginationExecutor`
 - Sort field registries for request-driven sorting via `PaginationSortRegistry<T>`
 - Roslyn analyzer support for nullable pagination columns
@@ -64,6 +66,20 @@ PaginationContext<T> Paginate<T>(
     Action<PaginationBuilder<T>> builderAction,
     PaginationDirection direction = PaginationDirection.Forward,
     object? reference = null)
+
+// With a strongly-typed reference:
+PaginationContext<T> Paginate<T, TReference>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    TReference reference)
+
+// With direct column values:
+PaginationContext<T> Paginate<T>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    ReadOnlySpan<ColumnValue> referenceValues)
 ```
 
 ### PaginateQuery
@@ -84,6 +100,20 @@ IQueryable<T> PaginateQuery<T>(
     Action<PaginationBuilder<T>> builderAction,
     PaginationDirection direction = PaginationDirection.Forward,
     object? reference = null)
+
+// With a strongly-typed reference:
+IQueryable<T> PaginateQuery<T, TReference>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    TReference reference)
+
+// With direct column values:
+IQueryable<T> PaginateQuery<T>(
+    this IQueryable<T> source,
+    PaginationQueryDefinition<T> queryDefinition,
+    PaginationDirection direction,
+    ReadOnlySpan<ColumnValue> referenceValues)
 ```
 
 ```cs
@@ -186,6 +216,8 @@ bool TryDecode(
 ```
 
 Supported cursor value types include strings, booleans, numeric primitives, `Guid`, `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, and enums.
+
+`ColumnValue`-based pagination works for member-access definitions such as `x => x.Created` or `x => x.Id`. Computed expressions such as `x => x.CreatedNullable ?? DateTime.MinValue` remain supported through regular reference-object overloads, but they are not addressable by `ColumnValue.Name`.
 
 Example:
 

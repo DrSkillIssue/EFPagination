@@ -594,6 +594,60 @@ public abstract class PaginationTest
         (await context.HasNextAsync(items)).Should().BeTrue();
     }
 
+    [Fact]
+    public async Task PrebuiltDefinition_Supports_StructReference_WithoutLooseTypingBoxingPath()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+
+        var result = await DbContext.MainModels
+            .PaginateQuery(definition, PaginationDirection.Forward, new MainModelIdReference(10))
+            .Take(Size)
+            .ToListAsync();
+
+        result.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(11, Size));
+    }
+
+    [Fact]
+    public async Task PrebuiltDefinition_Supports_DirectColumnValues()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created).Ascending(x => x.Id));
+        var reference = await DbContext.MainModels.OrderBy(x => x.Created).ThenBy(x => x.Id).Skip(Size - 1).FirstAsync();
+
+        ColumnValue[] referenceValues =
+        [
+            new(nameof(MainModel.Id), reference.Id),
+            new(nameof(MainModel.Created), reference.Created),
+        ];
+
+        var result = await DbContext.MainModels
+            .PaginateQuery(definition, PaginationDirection.Forward, referenceValues)
+            .Take(Size)
+            .ToListAsync();
+
+        result.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(11, Size));
+    }
+
+    [Fact]
+    public async Task DirectColumnValues_Reject_ComputedColumns()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.CreatedNullable ?? DateTime.MinValue).Ascending(x => x.Id));
+        ColumnValue[] referenceValues =
+        [
+            new(nameof(MainModel.CreatedNullable), DateTime.MinValue),
+            new(nameof(MainModel.Id), 10),
+        ];
+
+        var act = () => DbContext.MainModels
+            .PaginateQuery(definition, PaginationDirection.Forward, referenceValues)
+            .Take(Size)
+            .ToListAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Direct column-value pagination only supports member-access columns*");
+    }
+
+    private readonly record struct MainModelIdReference(int Id);
+
     private static void AssertResult(List<MainModel> expectedResult, List<MainModel> result)
     {
         result.Should().HaveCount(expectedResult.Count);

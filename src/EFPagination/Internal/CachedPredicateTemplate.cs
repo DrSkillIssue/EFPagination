@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
+using System.Diagnostics.CodeAnalysis;
 
 namespace EFPagination.Internal;
 
@@ -33,11 +34,22 @@ internal sealed class CachedPredicateTemplate<T>(
         PaginationDirection direction,
         object[] referenceValues)
     {
-        var template = direction == PaginationDirection.Forward
-            ? (_forwardTemplate ??= BuildTemplate(direction))
-            : (_backwardTemplate ??= BuildTemplate(direction));
+        var template = GetTemplate(direction);
         return template.Instantiate(referenceValues);
     }
+
+    public Expression<Func<T, bool>> Build<TReference>(
+        PaginationDirection direction,
+        PaginationColumn<T>[] columns,
+        TReference reference)
+    {
+        var template = GetTemplate(direction);
+        return template.Instantiate(columns, reference);
+    }
+
+    internal TemplateInstance ForwardTemplate => _forwardTemplate ??= BuildTemplate(PaginationDirection.Forward);
+
+    internal TemplateInstance BackwardTemplate => _backwardTemplate ??= BuildTemplate(PaginationDirection.Backward);
 
     private static readonly string[] s_placeholderNames =
     [
@@ -69,18 +81,27 @@ internal sealed class CachedPredicateTemplate<T>(
         return new TemplateInstance(templateBody, entityParam, placeholders, count);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private TemplateInstance GetTemplate(PaginationDirection direction)
+    {
+        return direction == PaginationDirection.Forward
+            ? (_forwardTemplate ??= BuildTemplate(direction))
+            : (_backwardTemplate ??= BuildTemplate(direction));
+    }
+
     /// <summary>
     /// Holds the pre-built template expression tree and pre-allocated per-call resources.
     /// Designed for reuse across calls: <see cref="ValueHolder"/> instances and their corresponding
     /// expression nodes are allocated once at construction and mutated in place on each call.
     /// </summary>
-    private sealed class TemplateInstance
+    internal sealed class TemplateInstance
     {
         private readonly Expression _templateBody;
         private readonly ParameterExpression _entityParam;
         private readonly PlaceholderSubstitutionVisitor _visitor;
         private readonly ValueHolder[] _valueHolders;
         private readonly Expression[] _valueExpressions;
+        private Expression<Func<T, bool>>? _cachedLambda;
 
         /// <summary>
         /// Initializes the template instance, pre-allocating all per-call resources.
@@ -123,9 +144,53 @@ internal sealed class CachedPredicateTemplate<T>(
                 _valueHolders[i].Value = referenceValues[i];
             }
 
-            var body = _visitor.Visit(_templateBody)!;
+            return _cachedLambda ??= BuildLambda();
+        }
+
+        public Expression<Func<T, bool>> Instantiate<TReference>(PaginationColumn<T>[] columns, TReference reference)
+        {
+            for (var i = 0; i < columns.Length; i++)
+            {
+                _valueHolders[i].Value = columns[i].ObtainValue(reference);
+            }
+
+            return _cachedLambda ??= BuildLambda();
+        }
+
+        public Expression<Func<T, bool>> InstantiateFromColumnValues(
+            PaginationColumn<T>[] columns,
+            ReadOnlySpan<ColumnValue> values)
+        {
+            for (var i = 0; i < columns.Length; i++)
+            {
+                var columnName = columns[i].GetRequiredPropertyNameForColumnValues();
+                var found = false;
+                for (var j = 0; j < values.Length; j++)
+                {
+                    if (string.Equals(values[j].Name, columnName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _valueHolders[i].Value = values[j].Value;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                    ThrowMissingColumn(columnName);
+            }
+
+            return _cachedLambda ??= BuildLambda();
+        }
+
+        private Expression<Func<T, bool>> BuildLambda()
+        {
+            var body = _visitor.Visit(_templateBody) ?? throw new InvalidOperationException("Failed to build cached pagination predicate.");
             return Expression.Lambda<Func<T, bool>>(body, _entityParam);
         }
+
+        [DoesNotReturn]
+        private static void ThrowMissingColumn(string name) =>
+            throw new ArgumentException($"No value provided for pagination column '{name}'.");
     }
 
     /// <summary>

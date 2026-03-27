@@ -28,17 +28,20 @@ public sealed class PaginationContext<T>
     /// <summary>
     /// Gets the final query with both ordering and pagination filtering applied.
     /// </summary>
+    /// <value>An <see cref="IQueryable{T}"/> that applies ordering and any keyset boundary predicate.</value>
     public IQueryable<T> Query { get; }
 
     /// <summary>
     /// Gets the query with only ordering applied (no pagination filter predicate).
     /// Used internally by <c>HasPreviousAsync</c> and <c>HasNextAsync</c>.
     /// </summary>
+    /// <value>An ordered <see cref="IQueryable{T}"/> without any page-boundary filter.</value>
     public IQueryable<T> OrderedQuery { get; }
 
     /// <summary>
     /// Gets the pagination direction that was used to create this context.
     /// </summary>
+    /// <value>The direction used when the context was created.</value>
     public PaginationDirection Direction { get; }
 
     /// <summary>

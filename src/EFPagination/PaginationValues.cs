@@ -18,5 +18,6 @@ public sealed class PaginationValues<T>
     /// <summary>
     /// Gets the number of ordered values stored in this instance.
     /// </summary>
+    /// <value>The number of definition-ordered boundary values stored in this instance.</value>
     public int Count => Values.Length;
 }

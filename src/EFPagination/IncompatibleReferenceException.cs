@@ -10,25 +10,34 @@ public sealed class IncompatibleReferenceException : Exception
     /// <summary>
     /// The name of the property that was not found on the reference object.
     /// </summary>
+    /// <value>The missing property name, or an empty string when unavailable.</value>
     public string PropertyName { get; }
 
     /// <summary>
     /// The type of the reference object that was searched.
     /// </summary>
+    /// <value>The reference object type, or <see cref="object"/> when unavailable.</value>
     public Type ReferenceType { get; }
 
     /// <summary>
     /// The entity type that defines the pagination column.
     /// </summary>
+    /// <value>The entity type that defined the missing property, or <see cref="object"/> when unavailable.</value>
     public Type EntityType { get; }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Initializes a new exception with default placeholder metadata.
+    /// </summary>
     public IncompatibleReferenceException()
         : this(string.Empty, typeof(object), typeof(object))
     {
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Initializes a new exception with the specified message.
+    /// </summary>
+    /// <param name="message">The exception message.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="message"/> is <see langword="null"/>.</exception>
     public IncompatibleReferenceException(string message)
         : base(message)
     {
@@ -37,7 +46,12 @@ public sealed class IncompatibleReferenceException : Exception
         EntityType = typeof(object);
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Initializes a new exception with the specified message and inner exception.
+    /// </summary>
+    /// <param name="message">The exception message.</param>
+    /// <param name="innerException">The underlying exception that caused the current exception.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="message"/> is <see langword="null"/>.</exception>
     public IncompatibleReferenceException(string message, Exception innerException)
         : base(message, innerException)
     {

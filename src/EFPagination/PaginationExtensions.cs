@@ -25,7 +25,8 @@ public static class PaginationExtensions
     /// <paramref name="source"/> is null.
     /// <paramref name="queryDefinition"/> is null.
     /// </exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered with the builder.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     /// <remarks>
     /// Note that calling this method will override any OrderBy calls you have done before.
     /// </remarks>
@@ -44,6 +45,14 @@ public static class PaginationExtensions
     /// <summary>
     /// Paginates using keyset pagination with ordered values bound to the pagination definition.
     /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The definition-bound ordered values to use as the page boundary.</param>
+    /// <returns>An object containing the modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="referenceValues"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
     public static PaginationContext<T> Paginate<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -67,6 +76,9 @@ public static class PaginationExtensions
     /// <param name="direction">The direction to take.</param>
     /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
     /// <returns>An object containing the modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="reference"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     public static PaginationContext<T> Paginate<T, TReference>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -89,6 +101,9 @@ public static class PaginationExtensions
     /// <param name="direction">The direction to take.</param>
     /// <param name="referenceValues">The column values to use as the pagination reference.</param>
     /// <returns>An object containing the modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="queryDefinition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is missing a required column when values are provided out of order.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition, or the direct-value path targets a definition that cannot be addressed by column name.</exception>
     public static PaginationContext<T> Paginate<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -110,6 +125,9 @@ public static class PaginationExtensions
     /// <param name="direction">The direction to take.</param>
     /// <param name="referenceValues">The column values to use as the pagination reference.</param>
     /// <returns>An object containing the modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="referenceValues"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is missing a required column when values are provided out of order.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition, or the direct-value path targets a definition that cannot be addressed by column name.</exception>
     public static PaginationContext<T> Paginate<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -129,6 +147,7 @@ public static class PaginationExtensions
     /// <paramref name="source"/> is null.
     /// <paramref name="builderAction"/> is null.
     /// </exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     /// <exception cref="InvalidOperationException">If no columns were registered with the builder.</exception>
     /// <remarks>
     /// Note that calling this method will override any OrderBy calls you have done before.
@@ -156,6 +175,9 @@ public static class PaginationExtensions
     /// <param name="direction">The direction to take.</param>
     /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
     /// <returns>An object containing the modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="builderAction"/>, or <paramref name="reference"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered by the builder.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     public static PaginationContext<T> Paginate<T, TReference>(
         this IQueryable<T> source,
         Action<PaginationBuilder<T>> builderAction,
@@ -282,7 +304,8 @@ public static class PaginationExtensions
     /// <paramref name="source"/> is null.
     /// <paramref name="queryDefinition"/> is null.
     /// </exception>
-    /// <exception cref="InvalidOperationException">If no properties were registered with the builder.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     /// <remarks>
     /// Note that calling this method will override any OrderBy calls you have done before.
     /// </remarks>
@@ -295,6 +318,14 @@ public static class PaginationExtensions
     /// <summary>
     /// Paginates using keyset pagination with ordered values bound to the pagination definition and returns the query directly.
     /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The definition-bound ordered values to use as the page boundary.</param>
+    /// <returns>The modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="referenceValues"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
     public static IQueryable<T> PaginateQuery<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -304,6 +335,16 @@ public static class PaginationExtensions
     /// <summary>
     /// Paginates using keyset pagination with a strongly-typed reference object and returns the query directly.
     /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <typeparam name="TReference">The type of the reference object.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
+    /// <returns>The modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="reference"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     public static IQueryable<T> PaginateQuery<T, TReference>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -319,6 +360,9 @@ public static class PaginationExtensions
     /// <param name="direction">The direction to take.</param>
     /// <param name="referenceValues">The column values to use as the pagination reference.</param>
     /// <returns>The modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="queryDefinition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is missing a required column when values are provided out of order.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition, or the direct-value path targets a definition that cannot be addressed by column name.</exception>
     public static IQueryable<T> PaginateQuery<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -328,6 +372,15 @@ public static class PaginationExtensions
     /// <summary>
     /// Paginates using keyset pagination with direct column values from an array, then returns the query directly.
     /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The column values to use as the pagination reference.</param>
+    /// <returns>The modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="referenceValues"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is missing a required column when values are provided out of order.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered with the definition, or the direct-value path targets a definition that cannot be addressed by column name.</exception>
     public static IQueryable<T> PaginateQuery<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -347,7 +400,8 @@ public static class PaginationExtensions
     /// <paramref name="source"/> is null.
     /// <paramref name="builderAction"/> is null.
     /// </exception>
-    /// <exception cref="InvalidOperationException">If no properties were registered with the builder.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered by the builder.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     /// <remarks>
     /// Note that calling this method will override any OrderBy calls you have done before.
     /// </remarks>
@@ -360,6 +414,16 @@ public static class PaginationExtensions
     /// <summary>
     /// Paginates using keyset pagination with an inline builder and strongly-typed reference object, then returns the query directly.
     /// </summary>
+    /// <typeparam name="T">The type of the entity.</typeparam>
+    /// <typeparam name="TReference">The type of the reference object.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="builderAction">An action that configures the pagination columns.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
+    /// <returns>The modified queryable.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="builderAction"/>, or <paramref name="reference"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">If no columns were registered by the builder.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     public static IQueryable<T> PaginateQuery<T, TReference>(
         this IQueryable<T> source,
         Action<PaginationBuilder<T>> builderAction,
@@ -373,6 +437,7 @@ public static class PaginationExtensions
     /// <typeparam name="T2">The type of the elements of the data.</typeparam>
     /// <param name="context">The <see cref="PaginationContext{T}"/> object.</param>
     /// <param name="data">The data list.</param>
+    /// <returns>A task that resolves to <see langword="true"/> when more data exists before the supplied page.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="context"/> is null.
     /// <paramref name="data"/> is null.
@@ -401,6 +466,7 @@ public static class PaginationExtensions
     /// <typeparam name="T2">The type of the elements of the data.</typeparam>
     /// <param name="context">The <see cref="PaginationContext{T}"/> object.</param>
     /// <param name="data">The data list.</param>
+    /// <returns>A task that resolves to <see langword="true"/> when more data exists after the supplied page.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="context"/> is null.
     /// <paramref name="data"/> is null.
@@ -441,6 +507,9 @@ public static class PaginationExtensions
     /// <typeparam name="T2">The type of the elements of the data.</typeparam>
     /// <param name="context">The <see cref="PaginationContext{T}"/> object.</param>
     /// <param name="data">The data list.</param>
+    /// <remarks>
+    /// This method reverses <paramref name="data"/> in-place only when the context direction is <see cref="PaginationDirection.Backward"/>.
+    /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="context"/> is null.
     /// <paramref name="data"/> is null.

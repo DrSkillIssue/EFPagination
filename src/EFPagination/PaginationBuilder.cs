@@ -27,6 +27,7 @@ public sealed class PaginationBuilder<T>
     /// <typeparam name="TColumn">The column value type.</typeparam>
     /// <param name="columnExpression">A lambda selecting the column property from the entity.</param>
     /// <returns>This builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="columnExpression"/> is <see langword="null"/>.</exception>
     public PaginationBuilder<T> Ascending<TColumn>(
         Expression<Func<T, TColumn>> columnExpression) => ConfigureColumn(columnExpression, isDescending: false);
 
@@ -36,6 +37,7 @@ public sealed class PaginationBuilder<T>
     /// <typeparam name="TColumn">The column value type.</typeparam>
     /// <param name="columnExpression">A lambda selecting the column property from the entity.</param>
     /// <returns>This builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="columnExpression"/> is <see langword="null"/>.</exception>
     public PaginationBuilder<T> Descending<TColumn>(
         Expression<Func<T, TColumn>> columnExpression) => ConfigureColumn(columnExpression, isDescending: true);
 
@@ -46,10 +48,12 @@ public sealed class PaginationBuilder<T>
     /// <param name="columnExpression">A lambda selecting the column property from the entity.</param>
     /// <param name="isDescending">If <see langword="true"/>, the column is sorted descending; otherwise ascending.</param>
     /// <returns>This builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="columnExpression"/> is <see langword="null"/>.</exception>
     public PaginationBuilder<T> ConfigureColumn<TColumn>(
         Expression<Func<T, TColumn>> columnExpression,
         bool isDescending)
     {
+        ArgumentNullException.ThrowIfNull(columnExpression);
         _columns.Add(new PaginationColumn<T, TColumn>(isDescending, columnExpression));
         return this;
     }

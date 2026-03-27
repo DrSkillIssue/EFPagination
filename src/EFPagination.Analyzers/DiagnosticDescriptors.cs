@@ -10,6 +10,7 @@ public static class DiagnosticCategories
     /// <summary>
     /// Category for diagnostics related to incorrect API usage.
     /// </summary>
+    /// <value>The diagnostic category name used for usage errors.</value>
     public const string Usage = nameof(Usage);
 }
 
@@ -23,6 +24,7 @@ public static class DiagnosticDescriptors
     /// <c>KP0001</c>: Reports when a pagination column expression resolves to a nullable type,
     /// which is unsupported for pagination ordering.
     /// </summary>
+    /// <value>The descriptor for nullable pagination column usage.</value>
     public static readonly DiagnosticDescriptor NullablePaginationColumn = new(
         "KP0001",
         "Pagination column may be null",

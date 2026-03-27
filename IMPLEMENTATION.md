@@ -16,21 +16,21 @@ public static class PaginationCursor
 public readonly record struct PaginationCursorOptions(string? SortBy = null, int? TotalCount = null);
 ```
 
-### Implementation (informed by dotnet/runtime research)
+### Implementation
 
-**Encode path — zero intermediate allocation:**
-1. Write JSON via `Utf8JsonWriter` into a stack-allocated `Span<byte>` (256 bytes covers all realistic cursors). `JsonSerializer.SerializeToUtf8Bytes` allocates a `byte[]` for the result and uses `PooledByteBufferWriter` (16KB initial rental) — both wasteful for 50-200 byte cursors.
-2. `Base64Url.GetEncodedLength(jsonLength)` computes exact output size.
-3. `Base64Url.TryEncodeToChars(utf8Json, charSpan, out written)` encodes in-place. The runtime implementation (`Base64UrlEncoder.cs`) uses SIMD (AVX2/SSSE3/AdvSimd) for the encoding map.
-4. `new string(charSpan[..written])` — single allocation: the final string. Everything else is stack or pooled.
+**Encode path:**
+1. Write JSON via `Utf8JsonWriter` into a stack-allocated `Span<byte>`. If the cursor exceeds the stack buffer, fall back to `ArrayPool<byte>`. `JsonSerializer.SerializeToUtf8Bytes` internally uses `PooledByteBufferWriter` with a 16KB default initial buffer (`JsonSerializerOptions.DefaultBufferSize`, confirmed at `src/libraries/System.Text.Json/src/System/Text/Json/Serialization/JsonSerializerOptions.cs:321`) and always allocates a final `byte[]` via `WrittenSpan.ToArray()` — disproportionate for small cursor payloads.
+2. `Base64Url.GetEncodedLength(jsonLength)` computes the exact output character count (`src/libraries/System.Private.CoreLib/src/System/Buffers/Text/Base64Url/Base64UrlEncoder.cs:40`).
+3. `Base64Url.TryEncodeToChars(utf8Json, charSpan, out written)` encodes into a caller-provided char span. The runtime implementation has SIMD-specific code paths for AVX2 and AdvSimd (`Base64UrlEncoder.cs:107, :296, :307, :330`).
+4. `new string(charSpan[..written])` — the only heap allocation in the encode path.
 
-**Decode path — zero allocation except the ColumnValue span:**
-1. `Base64Url.GetMaxDecodedLength(encoded.Length)` → stackalloc byte buffer.
-2. `Base64Url.TryDecodeFromChars(encoded, buffer, out written)` — SIMD-accelerated.
-3. `Utf8JsonReader` over the decoded bytes — zero-allocation streaming parser.
+**Decode path:**
+1. `Base64Url.GetMaxDecodedLength(encoded.Length)` computes the maximum decoded byte count (`Base64UrlDecoder.cs:29`). Stackalloc for small cursors, `ArrayPool` rent for larger.
+2. `Base64Url.TryDecodeFromChars(encoded, buffer, out written)` — SIMD-accelerated decode paths for AdvSimd, Ssse3, and Avx2 (`Base64UrlDecoder.cs:241, :376, :413`).
+3. `Utf8JsonReader` over the decoded bytes — a `ref struct`, forward-only, zero-allocation streaming parser (`src/libraries/System.Text.Json/src/System/Text/Json/Reader/Utf8JsonReader.cs:10`).
 4. Write name/value pairs into caller-provided `Span<ColumnValue>`.
 
-**Why not source-generated JsonSerializer:** For a cursor with 1-4 key/value pairs, manual `Utf8JsonWriter`/`Utf8JsonReader` eliminates the converter dispatch loop that even source-generated `JsonSerializerContext` runs. Direct property writes are ~3 instructions per field vs ~15 for the source-gen path.
+**Why manual Utf8JsonWriter over source-generated JsonSerializer:** For small fixed-schema JSON (1-4 fields), manual `Utf8JsonWriter.WriteString`/`WriteNumber` calls avoid the source-generated converter's property-loop dispatch. The performance difference has not been benchmarked for this exact shape — the recommendation is based on the code path difference (direct writes vs. converter resolution + property iteration), not measured instruction counts. Both are valid; manual writes are used here because the schema is fixed and known at compile time.
 
 ### Files
 - New: `src/EFPagination/PaginationCursor.cs`
@@ -38,18 +38,18 @@ public readonly record struct PaginationCursorOptions(string? SortBy = null, int
 
 ---
 
-## Feature 2: Integrated COUNT via Two-Query Batch
+## Feature 2: Integrated COUNT via Two-Query Execution
 
 ### Problem
-Consumers run `COUNT(*)` as a separate sequential query after the page query. Two round-trips instead of one.
+Consumers run `COUNT(*)` as a separate sequential query after the page query. Two database round-trips instead of one.
 
 ### Research Finding
-EF Core has no window function projection support. `COUNT(*) OVER()` cannot be injected into an `IQueryable` expression tree. `RowNumberExpression` is the only window function, used internally for `.Skip()/.Take()` on SQL Server, not exposed publicly.
+EF Core has no general window function projection support. `RowNumberExpression` is the only window function, used internally for `.Skip()/.Take()` translation, not exposed publicly. `COUNT(*) OVER()` cannot be injected into an `IQueryable` expression tree via LINQ or `EF.Functions`. This is an EF Core limitation, not a runtime limitation.
 
-SQLite supports `COUNT(*) OVER()` since 3.25.0, but EF Core cannot generate it from LINQ.
+SQLite supports `COUNT(*) OVER()` since version 3.25.0 (2018-09-15), but EF Core's LINQ translator cannot generate it.
 
 ### Implementation
-Since window functions are not viable through EF Core's LINQ pipeline, the library provides `ExecuteAsync` that runs both queries but offers the consumer control over when the count runs:
+The library provides `ExecuteAsync` that runs the page query and optionally the count query, giving the consumer control:
 
 ```csharp
 public readonly record struct KeysetPage<T>(
@@ -69,9 +69,9 @@ public static class PaginationExecutor
 }
 ```
 
-When `includeCount: true`, the count query runs. When `false`, `TotalCount` is set to `-1`. Consumers pass `includeCount: cursor == null` to only count on the first page, then embed the count in the cursor for subsequent pages.
+When `includeCount: false`, `TotalCount` is set to `-1`. Consumers pass `includeCount: cursor == null` to only count on the first page, then embed the count in the cursor for subsequent pages.
 
-The take+1 trim uses `List<T>.RemoveAt(Count - 1)` — confirmed O(1) for the last element. `CollectionsMarshal.SetCount` exists in .NET 10 but performs identical work for the last-element case (bounds check + clear + size decrement). `RemoveAt` is the correct choice.
+**Take+1 trim:** `List<T>.RemoveAt(Count - 1)` is O(1) for the last element — it decrements `_size`, clears the slot for reference types, increments `_version`, and skips `Array.Copy` because `_size - index - 1 == 0` (`src/libraries/System.Private.CoreLib/src/System/Collections/Generic/List.cs:1001`). `CollectionsMarshal.SetCount` performs similar tail-shrink work (`src/libraries/System.Private.CoreLib/src/System/Runtime/InteropServices/CollectionsMarshal.cs:144`) — it calls `Array.Clear` on truncated slots and sets `_size` — but the two methods are not identical in implementation. `RemoveAt` is used here because it is the established pattern and has equivalent performance for the last-element case.
 
 ### Files
 - New: `src/EFPagination/PaginationExecutor.cs`
@@ -85,11 +85,9 @@ The take+1 trim uses `List<T>.RemoveAt(Count - 1)` — confirmed O(1) for the la
 Consumers pre-build 20+ static `PaginationQueryDefinition<T>` fields because the builder only accepts `Expression<Func<T, TColumn>>`. A string-based API eliminates the boilerplate.
 
 ### Research Finding
-EF Core uses `Expression.Property(parameterExpression, propertyName)` extensively for runtime property access. The `Expression.Property(Expression, string)` overload calls `Type.GetProperty(propertyName)` internally — one reflection call, then creates a `MemberExpression`.
+`Expression.Property(Expression, string)` performs up to two reflective property lookups with binding flags (including `IgnoreCase`), then creates a `MemberExpression` via the `Property(expression, PropertyInfo)` overload (`src/libraries/System.Linq.Expressions/src/System/Linq/Expressions/MemberExpression.cs:206`). This reflection cost is paid once per definition build, not per request, because the resulting `PaginationQueryDefinition<T>` is cached.
 
-For caching, `(Type, string, bool)` as a `ConcurrentDictionary` key is optimal — `ValueTuple` does not allocate. `Type` is interned by the runtime.
-
-`Compile(preferInterpretation: false)` is the correct choice because the resulting delegate is cached and reused across requests. Full JIT amortizes over many invocations.
+`Compile(preferInterpretation: false)` (the default) produces a full JIT-compiled delegate. This is the correct choice when the delegate is built once and invoked many times — the upfront JIT cost amortizes over repeated invocations. EF Core uses `preferInterpretation: true` for expressions evaluated during query translation (where startup speed matters more), and `false` for resolver delegates that persist across requests (`LiftableConstantProcessor.cs:200`, `RelationalLiftableConstantProcessor.cs:40`).
 
 ### Implementation
 
@@ -108,7 +106,7 @@ public static class PaginationQuery
 }
 ```
 
-Internal caching:
+Internal caching via `ConcurrentDictionary` with a `ValueTuple` key:
 ```csharp
 private static readonly ConcurrentDictionary<(Type, string, bool, string?, bool), object> s_cache = new();
 
@@ -119,14 +117,12 @@ public static PaginationQueryDefinition<T> Build<T>(
     var key = (typeof(T), propertyName, descending, tiebreaker, tiebreakerDescending);
     return (PaginationQueryDefinition<T>)s_cache.GetOrAdd(key, static k =>
     {
-        var (type, prop, desc, tb, tbDesc) = k;
-        return PaginationQuery.Build<object>(b => // uses internal generic dispatch
-        {
-            // Build expression from string
-        });
+        // Build PaginationQueryDefinition<T> from string property names
     });
 }
 ```
+
+The `ValueTuple` key is a value type and does not allocate on the heap for the key itself. However, `ConcurrentDictionary` boxes value-type keys internally via `IEqualityComparer<TKey>.GetHashCode(TKey)` and stores them in `Node` objects — the "zero allocation" claim applies to the lookup path (no key allocation per `TryGetValue`), not the insertion path.
 
 The `PaginationBuilder<T>` gets a new internal method:
 ```csharp
@@ -135,8 +131,7 @@ internal PaginationBuilder<T> Column(string propertyName, bool isDescending)
     var param = Expression.Parameter(typeof(T), "x");
     var property = Expression.Property(param, propertyName);
     var lambda = Expression.Lambda(property, param);
-    // Create PaginationColumn<T, TColumn> via reflection on property.Type
-    // Cache the column construction per (Type, propertyName, isDescending)
+    // Create PaginationColumn<T, TColumn> via MakeGenericType on property.PropertyType
 }
 ```
 
@@ -152,9 +147,9 @@ internal PaginationBuilder<T> Column(string propertyName, bool isDescending)
 Consumers build `FrozenDictionary<string, SortVariant<T>>` manually to validate sort field names and map to definitions. Universal boilerplate.
 
 ### Research Finding
-`FrozenDictionary<string, T>` with `StringComparer.OrdinalIgnoreCase` uses `KeyAnalyzer` to find the minimal unique substring across keys, then dispatches to specialized implementations (`LeftJustifiedSingleChar`, `LeftJustifiedSubstring`, etc.). For 5 sort fields like `["id", "ipAddress", "createdAt", "notes", "createdBy"]`, it picks a single-character or 2-char substring hash. Lookups are O(1) with a fast length pre-check.
+`FrozenDictionary<string, T>` with `StringComparer.OrdinalIgnoreCase` runs `KeyAnalyzer.Analyze` (`src/libraries/System.Collections.Immutable/src/System/Collections/Frozen/String/KeyAnalyzer.cs:17`) to find the minimal unique substring across all keys, then selects from ~12 specialized implementations such as `OrdinalStringFrozenDictionary_LeftJustifiedSingleChar` or `_LeftJustifiedSubstring` (`FrozenDictionary.cs:224, :232`). The exact implementation chosen depends on the specific key set at construction time — it is not predictable without running the analyzer on the actual keys.
 
-`FrozenDictionary` supports `AlternateLookup<ReadOnlySpan<char>>` — lookups without allocating a string from query parameters. `StringComparer.OrdinalIgnoreCase` implements `IAlternateEqualityComparer<ReadOnlySpan<char>, string>` in .NET 9+.
+`FrozenDictionary` supports `AlternateLookup<ReadOnlySpan<char>>` for string keys (`FrozenDictionary.AlternateLookup.cs:24, :45, :52`). `StringComparer.OrdinalIgnoreCase` implements `IAlternateEqualityComparer<ReadOnlySpan<char>, string?>` (`src/libraries/System.Private.CoreLib/src/System/StringComparer.cs:29, :321, :380`). This enables lookups from query parameter spans without allocating a `string` for the key.
 
 ### Implementation
 
@@ -180,7 +175,7 @@ public readonly record struct SortField<T>(
     PaginationQueryDefinition<T> Descending) where T : class;
 ```
 
-`Resolve` uses the `AlternateLookup<ReadOnlySpan<char>>` to find the definition without allocating a string from the query parameter. Falls back to the default definition for unknown fields.
+`Resolve` uses the `AlternateLookup<ReadOnlySpan<char>>` to look up the definition from a query parameter span. Returns the default definition for unknown sort fields — the library does not throw on invalid input.
 
 ### Files
 - New: `src/EFPagination/PaginationSortRegistry.cs`

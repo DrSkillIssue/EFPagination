@@ -10,8 +10,8 @@ namespace Sample.Pages;
 /// </summary>
 public sealed class NullableModel(AppDbContext dbContext) : PageModelBase(dbContext)
 {
-    private static readonly PaginationQueryDefinition<User> _definition =
+    private static readonly PaginationQueryDefinition<User> s_definition =
         PaginationQuery.Build<User>(b => b.Ascending(x => x.NullableDateComputed).Ascending(x => x.Id));
 
-    protected override PaginationQueryDefinition<User> Definition => _definition;
+    protected override PaginationQueryDefinition<User> Definition => s_definition;
 }

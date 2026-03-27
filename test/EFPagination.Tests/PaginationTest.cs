@@ -568,7 +568,8 @@ public abstract class PaginationTest
     public async Task StringBuiltDefinition_MissingTiebreakerProperty_ThrowsIncompatibleReferenceException()
     {
         var definition = PaginationQuery.Build<MainModel>("Created", descending: false, tiebreaker: "Id", tiebreakerDescending: false);
-        var reference = new { Created = (await DbContext.MainModels.OrderBy(x => x.Created).FirstAsync()).Created };
+        var Created = (await DbContext.MainModels.OrderBy(x => x.Created).FirstAsync()).Created;
+        var reference = new { Created };
 
         var act = () => DbContext.MainModels
             .PaginateQuery(definition, PaginationDirection.Forward, reference)

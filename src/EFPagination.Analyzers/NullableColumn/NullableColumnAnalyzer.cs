@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using EFPagination.Analyzers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Operations;

@@ -11,10 +11,10 @@ namespace Sample.Pages;
 /// </summary>
 public sealed class NestedModel(AppDbContext dbContext) : PageModelBase(dbContext)
 {
-    private static readonly PaginationQueryDefinition<User> _definition =
+    private static readonly PaginationQueryDefinition<User> s_definition =
         PaginationQuery.Build<User>(b => b.Descending(x => x.Details.Created).Ascending(x => x.Id));
 
-    protected override PaginationQueryDefinition<User> Definition => _definition;
+    protected override PaginationQueryDefinition<User> Definition => s_definition;
 
     protected override IQueryable<User> ApplyIncludes(IQueryable<User> query) =>
         query.Include(x => x.Details);

@@ -36,6 +36,7 @@ public static class PaginationQuery
     /// <param name="tiebreaker">Optional tiebreaker property name. Defaults to "Id".</param>
     /// <param name="tiebreakerDescending">Whether the tiebreaker sort is descending.</param>
     /// <returns>A cached, reusable pagination query definition.</returns>
+    /// <exception cref="ArgumentException"><paramref name="propertyName"/> or <paramref name="tiebreaker"/> does not name a public instance property on <typeparamref name="T"/>.</exception>
     public static PaginationQueryDefinition<T> Build<T>(
         string propertyName,
         bool descending,

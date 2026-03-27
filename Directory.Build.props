@@ -21,7 +21,7 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsPackable)' != 'false'">
-    <Version>1.1.2</Version>
+    <Version>1.1.3</Version>
     <Authors>DrSkillIssue</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/DrSkillIssue/EFPagination</PackageProjectUrl>

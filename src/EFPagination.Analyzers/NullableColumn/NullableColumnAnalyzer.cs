@@ -18,10 +18,16 @@ public sealed class NullableColumnAnalyzer : DiagnosticAnalyzer
     /// </summary>
     private const string BuilderTypeFullName = "EFPagination.PaginationBuilder`1";
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Gets the diagnostics supported by this analyzer.
+    /// </summary>
+    /// <value>The diagnostics supported by this analyzer.</value>
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } = [DiagnosticDescriptors.NullablePaginationColumn];
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Configures the analyzer pipeline.
+    /// </summary>
+    /// <param name="context">The analyzer initialization context.</param>
     public override void Initialize(AnalysisContext context)
     {
         context.EnableConcurrentExecution();

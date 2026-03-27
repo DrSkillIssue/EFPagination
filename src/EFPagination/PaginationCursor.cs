@@ -1,4 +1,3 @@
-#pragma warning disable CS1591
 using System.Buffers;
 using System.Buffers.Text;
 using System.Collections.Concurrent;
@@ -9,6 +8,9 @@ using System.Text.Json;
 
 namespace EFPagination;
 
+/// <summary>
+/// Encodes and decodes opaque cursor tokens containing typed pagination boundary values.
+/// </summary>
 public static class PaginationCursor
 {
     private const int StackAllocThreshold = 256;
@@ -51,6 +53,14 @@ public static class PaginationCursor
     [ThreadStatic]
     private static Utf8JsonWriter? s_jsonWriter;
 
+    /// <summary>
+    /// Encodes pagination values and optional metadata into an opaque cursor token.
+    /// </summary>
+    /// <param name="values">The values to encode in definition order.</param>
+    /// <param name="options">Optional cursor metadata to encode.</param>
+    /// <returns>A base64url cursor token containing the encoded values and metadata.</returns>
+    /// <exception cref="NotSupportedException">One of the supplied values has a type that the cursor format does not support.</exception>
+    /// <exception cref="InvalidOperationException">A supported value cannot be formatted into the cursor payload.</exception>
     public static string Encode(ReadOnlySpan<ColumnValue> values, PaginationCursorOptions? options = null)
     {
         var opts = options.GetValueOrDefault();
@@ -205,11 +215,28 @@ public static class PaginationCursor
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Decodes a cursor token into a caller-supplied <see cref="ColumnValue"/> buffer.
+    /// </summary>
+    /// <param name="encoded">The encoded cursor token.</param>
+    /// <param name="values">The destination buffer. Each entry should already contain the expected column name.</param>
+    /// <param name="written">When this method returns <see langword="true"/>, contains the number of values decoded into <paramref name="values"/>.</param>
+    /// <returns><see langword="true"/> if the cursor was decoded successfully; otherwise <see langword="false"/>.</returns>
     public static bool TryDecode(ReadOnlySpan<char> encoded, Span<ColumnValue> values, out int written)
     {
         return TryDecode(encoded, values, out written, out _, out _);
     }
 
+    /// <summary>
+    /// Decodes a cursor token into definition-bound ordered pagination values.
+    /// </summary>
+    /// <typeparam name="T">The entity type associated with the pagination definition.</typeparam>
+    /// <param name="encoded">The encoded cursor token.</param>
+    /// <param name="definition">The pagination definition that determines the expected value order.</param>
+    /// <param name="values">When this method returns <see langword="true"/>, contains the decoded ordered values.</param>
+    /// <param name="written">When this method returns <see langword="true"/>, contains the number of decoded values.</param>
+    /// <returns><see langword="true"/> if the cursor was decoded successfully; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="definition"/> is <see langword="null"/>.</exception>
     public static bool TryDecode<T>(
         ReadOnlySpan<char> encoded,
         PaginationQueryDefinition<T> definition,
@@ -219,6 +246,18 @@ public static class PaginationCursor
         return TryDecode(encoded, definition, out values, out written, out _, out _);
     }
 
+    /// <summary>
+    /// Decodes a cursor token into definition-bound ordered pagination values and optional metadata.
+    /// </summary>
+    /// <typeparam name="T">The entity type associated with the pagination definition.</typeparam>
+    /// <param name="encoded">The encoded cursor token.</param>
+    /// <param name="definition">The pagination definition that determines the expected value order.</param>
+    /// <param name="values">When this method returns <see langword="true"/>, contains the decoded ordered values.</param>
+    /// <param name="written">When this method returns <see langword="true"/>, contains the number of decoded values.</param>
+    /// <param name="sortBy">When this method returns <see langword="true"/>, contains the decoded logical sort key, if present.</param>
+    /// <param name="totalCount">When this method returns <see langword="true"/>, contains the decoded total count, if present.</param>
+    /// <returns><see langword="true"/> if the cursor was decoded successfully; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="definition"/> is <see langword="null"/>.</exception>
     public static bool TryDecode<T>(
         ReadOnlySpan<char> encoded,
         PaginationQueryDefinition<T> definition,
@@ -240,6 +279,15 @@ public static class PaginationCursor
         return false;
     }
 
+    /// <summary>
+    /// Decodes a cursor token into a caller-supplied <see cref="ColumnValue"/> buffer and optional metadata.
+    /// </summary>
+    /// <param name="encoded">The encoded cursor token.</param>
+    /// <param name="values">The destination buffer. Each entry should already contain the expected column name.</param>
+    /// <param name="written">When this method returns <see langword="true"/>, contains the number of values decoded into <paramref name="values"/>.</param>
+    /// <param name="sortBy">When this method returns <see langword="true"/>, contains the decoded logical sort key, if present.</param>
+    /// <param name="totalCount">When this method returns <see langword="true"/>, contains the decoded total count, if present.</param>
+    /// <returns><see langword="true"/> if the cursor was decoded successfully; otherwise <see langword="false"/>.</returns>
     public static bool TryDecode(ReadOnlySpan<char> encoded, Span<ColumnValue> values, out int written, out string? sortBy, out int? totalCount)
     {
         return TryDecodeCore(encoded, values, null, out written, out sortBy, out totalCount);

@@ -6,6 +6,23 @@ namespace EFPagination;
 
 public static class PaginationExecutor
 {
+    public static Task<KeysetPage<T>> ExecuteAsync<T>(
+        IQueryable<T> query,
+        PaginationQueryDefinition<T> definition,
+        int pageSize,
+        bool includeCount,
+        ReadOnlySpan<ColumnValue> referenceValues,
+        CancellationToken ct = default) where T : class
+    {
+        return ExecuteCoreAsync(
+            query,
+            definition,
+            pageSize,
+            query.Paginate(definition, PaginationDirection.Forward, referenceValues),
+            includeCount,
+            ct);
+    }
+
     public static async Task<KeysetPage<T>> ExecuteAsync<T>(
         IQueryable<T> query,
         PaginationQueryDefinition<T> definition,
@@ -14,9 +31,26 @@ public static class PaginationExecutor
         bool includeCount,
         CancellationToken ct = default) where T : class
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
+        return await ExecuteCoreAsync(
+            query,
+            definition,
+            pageSize,
+            query.Paginate(definition, PaginationDirection.Forward, reference),
+            includeCount,
+            ct).ConfigureAwait(false);
+    }
 
-        var context = query.Paginate(definition, PaginationDirection.Forward, reference);
+    private static async Task<KeysetPage<T>> ExecuteCoreAsync<T>(
+        IQueryable<T> query,
+        PaginationQueryDefinition<T> definition,
+        int pageSize,
+        PaginationContext<T> context,
+        bool includeCount,
+        CancellationToken ct) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
 
         var items = new List<T>(pageSize + 1);
         await foreach (var item in context.Query

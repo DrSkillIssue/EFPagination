@@ -42,7 +42,7 @@ var hasNext = await nextContext.HasNextAsync(nextUsers);
 - Runtime sort definitions via `PaginationQuery.Build<T>(string, ...)`
 - Opaque cursor token encoding/decoding with `PaginationCursor`
 - Direct `ColumnValue` pagination APIs for member-access definitions
-- Page execution with optional total-count retrieval via `PaginationExecutor`
+- Page execution with optional total-count retrieval via `PaginationExecutor`, including direct `ColumnValue` input
 - Sort field registries for request-driven sorting via `PaginationSortRegistry<T>`
 - Roslyn analyzer support for nullable pagination columns
 
@@ -190,7 +190,18 @@ Task<KeysetPage<T>> ExecuteAsync<T>(
     bool includeCount,
     CancellationToken ct = default)
     where T : class
+
+Task<KeysetPage<T>> ExecuteAsync<T>(
+    IQueryable<T> query,
+    PaginationQueryDefinition<T> definition,
+    int pageSize,
+    bool includeCount,
+    ReadOnlySpan<ColumnValue> referenceValues,
+    CancellationToken ct = default)
+    where T : class
 ```
+
+Use the `ColumnValue` overload when you already have decoded keyset values and want to skip rebuilding an anonymous or DTO reference object.
 
 `KeysetPage<T>` contains:
 

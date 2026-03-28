@@ -5,12 +5,11 @@ Nullable columns are **not supported** in pagination definitions. The library sh
 This restriction applies to all pagination entry points:
 
 - `PaginationQuery.Build<T>(b => ...)`
-- `query.Paginate(b => ...)`
 - definitions stored in `SortField<T>` / `PaginationSortRegistry<T>`
 
 ## Why?
 
-`NULL` has special semantics in SQL. You cannot compare against it with standard operators — any comparison with `NULL` evaluates to `UNKNOWN`, causing the entire `WHERE` clause to exclude the row. Different databases also sort `NULL` values differently (some treat it as smallest, others as largest), making pagination behavior unpredictable.
+`NULL` has special semantics in SQL. You cannot compare against it with standard operators -- any comparison with `NULL` evaluates to `UNKNOWN`, causing the entire `WHERE` clause to exclude the row. Different databases also sort `NULL` values differently (some treat it as smallest, others as largest), making pagination behavior unpredictable.
 
 ## Solution 1: Computed Columns (Recommended)
 
@@ -58,7 +57,12 @@ modelBuilder.Entity<User>()
 ### Step 4: Use in the Definition
 
 ```cs
-PaginationQuery.Build<User>(b => b.Ascending(x => x.CreatedComputed).Ascending(x => x.Id));
+static readonly PaginationQueryDefinition<User> Definition =
+    PaginationQuery.Build<User>(b => b.Ascending(x => x.CreatedComputed).Ascending(x => x.Id));
+
+var page = await dbContext.Users
+    .Keyset(Definition)
+    .TakeAsync(20);
 ```
 
 ### Working Example
@@ -80,5 +84,5 @@ If you encode cursors with `PaginationCursor`, the cursor stores the evaluated n
 
 ## See Also
 
-- [Analyzers & Diagnostics](diagnostics.md) — `KP0001` warns about nullable columns
-- [Database Indexing](indexing.md) — Indexing computed columns
+- [Analyzers & Diagnostics](diagnostics.md) -- `KP0001` warns about nullable columns
+- [Database Indexing](indexing.md) -- Indexing computed columns

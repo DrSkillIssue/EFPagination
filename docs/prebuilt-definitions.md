@@ -2,9 +2,7 @@
 
 ## Why Prebuild?
 
-When you pass a builder action directly to `Paginate`, the library must construct the pagination definition on every call. This includes reflection, expression tree building, and cache setup.
-
-A prebuilt `PaginationQueryDefinition<T>` does this work once and caches the internal expression templates, reducing per-call overhead to near zero.
+A prebuilt `PaginationQueryDefinition<T>` does reflection, expression tree building, and cache setup once. Per-call overhead is reduced to near zero because the internal expression templates are cached and reused.
 
 ## Creating a Definition
 
@@ -25,30 +23,26 @@ var createdDescending = PaginationQuery.Build<User>(
     tiebreakerDescending: false);
 ```
 
-The string overload caches by `(T, propertyName, descending, tiebreaker, tiebreakerDescending)`, so repeated calls with the same inputs reuse the same definition instance.
+The string overload caches by `(propertyName, descending, tiebreaker, tiebreakerDescending)` per entity type, so repeated calls with the same inputs reuse the same definition instance. The cache is bounded to 256 entries per type.
 
 ## Using a Definition
 
-Pass it to `Paginate` instead of a builder action:
+Pass it to `Keyset()`:
 
 ```cs
-// With prebuilt definition (recommended):
-var context = dbContext.Users.Paginate(UserDefinition, direction, reference);
-
-// Without prebuilt definition (avoid in hot paths):
-var context = dbContext.Users.Paginate(
-    b => b.Descending(x => x.Created).Ascending(x => x.Id),
-    direction,
-    reference);
+var page = await dbContext.Users
+    .Keyset(UserDefinition)
+    .After(cursor)
+    .TakeAsync(20);
 ```
 
 ## When to Use Each
 
 | Approach | Use when |
 |----------|----------|
-| Prebuilt `PaginationQueryDefinition<T>` | Production code, API endpoints, repeated queries |
-| Inline builder action | Prototyping, tests, one-off queries |
-| String-based `Build<T>(...)` | User-selectable sort fields, admin grids, runtime sort configuration |
+| Lambda `Build<T>(b => ...)` | Known sort orders, stored as `static readonly` fields |
+| String `Build<T>(string, ...)` | User-selectable sort fields, admin grids, runtime sort configuration |
+| `SortField.Create<T>` + `PaginationSortRegistry<T>` | Multiple sort fields exposed to API consumers |
 
 ## Sort Registries
 
@@ -57,22 +51,43 @@ If callers can choose among several sort fields, register them once and resolve 
 ```cs
 private static readonly PaginationSortRegistry<User> Sorts = new(
     defaultDefinition: PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id)),
-    new SortField<User>(
-        "created",
-        PaginationQuery.Build<User>("Created", descending: false, tiebreaker: "Id"),
-        PaginationQuery.Build<User>("Created", descending: true, tiebreaker: "Id")),
-    new SortField<User>(
-        "name",
-        PaginationQuery.Build<User>("Name", descending: false, tiebreaker: "Id"),
-        PaginationQuery.Build<User>("Name", descending: true, tiebreaker: "Id")));
+    SortField.Create<User>("created", "Created"),
+    SortField.Create<User>("name", "Name"));
+```
 
+### With the Fluent API
+
+The `Keyset(registry, request)` overload resolves the definition, applies cursors, and embeds the sort key in cursor tokens:
+
+```cs
+var page = await dbContext.Users
+    .Keyset(Sorts, request)
+    .MaxPageSize(100)
+    .TakeAsync(request.PageSize);
+```
+
+### Manual Resolution
+
+You can also resolve manually and pass the definition to `Keyset()`:
+
+```cs
 var definition = Sorts.Resolve(sortBy, sortDir);
-var context = dbContext.Users.Paginate(definition, reference: cursorReference);
+var page = await dbContext.Users
+    .Keyset(definition)
+    .After(cursor)
+    .TakeAsync(20);
 ```
 
 `Resolve` is case-insensitive for both field names and `desc`, and falls back to the default definition when the request asks for an unknown sort.
 
+`TryResolve` returns `false` instead of falling back, allowing you to reject invalid sort field names:
+
+```cs
+if (!Sorts.TryResolve(sortBy, sortDir, out var definition))
+    return Results.BadRequest("Invalid sort field.");
+```
+
 ## See Also
 
-- [API Reference](api-reference.md#paginationquerydefinitiont) — `PaginationQueryDefinition<T>` details
-- [Getting Started](getting-started.md) — End-to-end example with prebuilt definition
+- [API Reference](api-reference.md#paginationquerydefinitiont) -- `PaginationQueryDefinition<T>` details
+- [Getting Started](getting-started.md) -- End-to-end example with prebuilt definition

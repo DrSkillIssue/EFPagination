@@ -90,7 +90,9 @@ internal abstract class FilterPredicateStrategy : IFilterPredicateStrategy, IFil
     /// <summary>
     /// Cached constant expression for the integer <c>0</c>, used in <c>CompareTo</c> comparisons.
     /// </summary>
-    private static readonly ConstantExpression s_constantExpression0 = Expression.Constant(0);
+    internal static ConstantExpression ZeroConstant { get; } = Expression.Constant(0);
+
+    private static readonly ConstantExpression s_constantExpression0 = ZeroConstant;
 
     /// <inheritdoc />
     public Expression<Func<T, bool>> BuildFilterPredicateExpression<T>(
@@ -109,7 +111,7 @@ internal abstract class FilterPredicateStrategy : IFilterPredicateStrategy, IFil
 
         var param = Expression.Parameter(typeof(T), "entity");
         var finalExpression = BuildExpressionCore(columns, direction, referenceValueBodies, param);
-        return Expression.Lambda<Func<T, bool>>(finalExpression, param);
+        return FastLambda<T>.Create(finalExpression, param);
     }
 
     /// <inheritdoc />
@@ -210,7 +212,7 @@ internal abstract class FilterPredicateStrategy : IFilterPredicateStrategy, IFil
         if (expression.Type.IsEnum)
         {
             var underlyingType = Enum.GetUnderlyingType(expression.Type);
-            return Expression.Convert(expression, underlyingType);
+            return FastExpressions.Convert(expression, underlyingType);
         }
 
         return expression;
@@ -226,7 +228,7 @@ internal abstract class FilterPredicateStrategy : IFilterPredicateStrategy, IFil
     {
         if (memberExpression.Type != targetExpression.Type)
         {
-            return Expression.Convert(targetExpression, memberExpression.Type);
+            return FastExpressions.Convert(targetExpression, memberExpression.Type);
         }
 
         return targetExpression;
@@ -287,7 +289,7 @@ internal sealed class FilterPredicateStrategyMethod1 : FilterPredicateStrategy
     /// When <see langword="true"/>, prepends a <c>col1 &gt;= ref1</c> clause to enable
     /// the database to use an index seek on the first column.
     /// </summary>
-    internal static bool EnableFirstColPredicateOpt = true;
+    internal const bool EnableFirstColPredicateOpt = true;
 
     private FilterPredicateStrategyMethod1()
     {
@@ -362,76 +364,3 @@ internal sealed class FilterPredicateStrategyMethod1 : FilterPredicateStrategy
     }
 }
 
-/// <summary>
-/// Strategy that builds the predicate as a conjunction of disjunctions:
-/// <c>(col1 &gt;= ref1) AND (col1 != ref1 OR col2 &gt;= ref2) AND ...</c>.
-/// </summary>
-internal sealed class FilterPredicateStrategyMethod2 : FilterPredicateStrategy
-{
-    /// <summary>
-    /// Singleton instance.
-    /// </summary>
-    public static readonly FilterPredicateStrategyMethod2 Instance = new();
-
-    private FilterPredicateStrategyMethod2()
-    {
-    }
-
-    /// <inheritdoc />
-    protected override Expression BuildExpressionCore<T>(
-        PaginationColumn<T>[] columns,
-        PaginationDirection direction,
-        Expression[] referenceValueExpressions,
-        ParameterExpression param)
-    {
-        var memberAccessExpressions = new Expression[columns.Length];
-        for (var i = 0; i < columns.Length; i++)
-        {
-            memberAccessExpressions[i] = columns[i].MakeAccessExpression(param);
-        }
-
-        Expression finalExpression;
-
-        var andExpression = default(BinaryExpression)!;
-        var innerLimit = 1;
-        for (var i = 0; i < columns.Length; i++)
-        {
-            var isOuterLastOperation = i + 1 == columns.Length;
-            var orExpression = default(BinaryExpression)!;
-
-            for (var j = 0; j < innerLimit; j++)
-            {
-                var isInnerLastOperation = j + 1 == innerLimit;
-                var column = columns[j];
-                var memberAccess = memberAccessExpressions[j];
-                var referenceValueExpression = referenceValueExpressions[j];
-
-                BinaryExpression innerExpression;
-                if (!isInnerLastOperation)
-                {
-                    innerExpression = Expression.NotEqual(
-                        memberAccess,
-                        EnsureMatchingType(memberAccess, referenceValueExpression));
-                }
-                else
-                {
-                    var compare = GetComparisonExpressionToApply(direction, column, orEqual: !isOuterLastOperation);
-                    innerExpression = MakeComparisonExpression(
-                        column,
-                        memberAccess, referenceValueExpression,
-                        compare);
-                }
-
-                orExpression = orExpression is null ? innerExpression : Expression.Or(orExpression, innerExpression);
-            }
-
-            andExpression = andExpression is null ? orExpression : Expression.And(andExpression, orExpression);
-
-            innerLimit++;
-        }
-
-        finalExpression = andExpression;
-
-        return finalExpression;
-    }
-}

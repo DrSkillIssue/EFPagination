@@ -121,5 +121,9 @@ internal sealed class TypeAdaptingExpressionVisitor<T, TColumn>(
 
     [DoesNotReturn]
     private static void ThrowIncompatibleObject(string propertyName, Type referenceType) =>
-        throw new IncompatibleReferenceException(propertyName, referenceType, typeof(T));
+        throw new IncompatibleReferenceException(
+            $"Projection type '{referenceType.Name}' is missing property '{propertyName}' " +
+            $"required by the pagination definition on '{typeof(T).Name}'. " +
+            $"Ensure your projected DTO includes all pagination column properties.",
+            propertyName, referenceType, typeof(T));
 }

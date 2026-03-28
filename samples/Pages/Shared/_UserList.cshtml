@@ -28,7 +28,7 @@
 
         <div class="stats-bar">
             <span>@Model.TotalCount.ToString("N0") total items</span>
-            <span>@Model.ElapsedMs ms query &middot; @Model.TotalElapsedMs ms total</span>
+            <span>@Model.ElapsedMs ms</span>
         </div>
 
         <hr class="my-2" />
@@ -36,9 +36,9 @@
         <nav class="pagination-nav gap-2">
             <a asp-page="@pageName" asp-route-first="true"
                class="btn btn-outline-secondary btn-sm @(Model.HasPrevious ? "" : "disabled")">First</a>
-            <a asp-page="@pageName" asp-route-before="@Model.Users[0].Id"
+            <a asp-page="@pageName" asp-route-before="@Model.PreviousCursor"
                class="btn btn-outline-secondary btn-sm @(Model.HasPrevious ? "" : "disabled")">Previous</a>
-            <a asp-page="@pageName" asp-route-after="@Model.Users[^1].Id"
+            <a asp-page="@pageName" asp-route-after="@Model.NextCursor"
                class="btn btn-outline-primary btn-sm @(Model.HasNext ? "" : "disabled")">Next</a>
             <a asp-page="@pageName" asp-route-last="true"
                class="btn btn-outline-secondary btn-sm @(Model.HasNext ? "" : "disabled")">Last</a>

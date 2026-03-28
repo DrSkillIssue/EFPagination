@@ -1,83 +1,58 @@
 # Loose Typing
 
-The reference objects and data lists accepted by `Paginate`, `HasPreviousAsync`, `HasNextAsync`, and `EnsureCorrectOrder` are **loosely typed**. They don't need to be the entity type — they just need properties with names matching the pagination columns.
+## Fluent API
+
+The fluent `Keyset()` API handles cursor encoding and decoding internally, so loose typing is rarely needed. Cursor strings are opaque tokens that carry typed values -- no manual reference construction required.
+
+However, `AfterEntity` and `BeforeEntity` accept **any object** with properties matching the pagination definition columns. This enables patterns like:
+
+```cs
+// Anonymous type -- no entity load required:
+var page = await dbContext.Users
+    .Keyset(Definition)
+    .AfterEntity(new { Created = someDate, Id = someId })
+    .TakeAsync(20);
+```
+
+## Low-Level API
+
+The `Paginate`, `HasPreviousAsync`, `HasNextAsync`, and `EnsureCorrectOrder` extension methods are **loosely typed**. Reference objects and data lists don't need to be the entity type -- they just need properties with names matching the pagination columns.
 
 This enables common patterns like:
 
 - Using DTOs or anonymous types as references (no entity load required)
 - Calling `HasNextAsync` on projected results
 - Building references from API query parameters
-- Rehydrating references from decoded `PaginationCursor` values
 
-## Example: Anonymous Type Reference
+### Example: Anonymous Type Reference
 
 ```cs
-// Build a reference from known values — no database query needed.
 var reference = new { Created = someDate, Id = someId };
 
-var context = dbContext.Users.Paginate(
-    b => b.Descending(x => x.Created).Ascending(x => x.Id),
-    PaginationDirection.Forward,
-    reference);
-```
-
-## Example: Minimal API with DTOs
-
-The most common real-world pattern — receive cursor values as query parameters, paginate, project to DTOs:
-
-```cs
-app.MapGet("/api/users", async (AppDbContext db, DateTime? afterCreated, int? afterId) =>
-{
-    // Build reference from query params — no entity load required.
-    object? reference = (afterCreated, afterId) switch
-    {
-        (not null, not null) => new { Created = afterCreated.Value, Id = afterId.Value },
-        _ => null,
-    };
-
-    var context = db.Users.Paginate(Definition, PaginationDirection.Forward, reference);
-
-    var users = await context.Query
-        .Take(20)
-        .Select(u => new UserDto(u.Id, u.Name, u.Created))
-        .ToListAsync();
-
-    context.EnsureCorrectOrder(users);
-
-    // HasNextAsync works with projected DTOs, not just entities.
-    var hasNext = await context.HasNextAsync(users);
-
-    return Results.Ok(new { Data = users, HasNext = hasNext });
-});
-```
-
-See the [sample API endpoint](../samples/Endpoints/UsersApi.cs) for a complete working example.
-
-## Example: Decode a Cursor Into a Loose Reference
-
-```cs
-ColumnValue[] values =
-[
-    new(nameof(User.Created), null),
-    new(nameof(User.Id), null),
-];
-
-object? reference = null;
-
-if (!string.IsNullOrWhiteSpace(after) &&
-    PaginationCursor.TryDecode(after, values, out _))
-{
-    reference = new
-    {
-        Created = (DateTime)values[0].Value!,
-        Id = (int)values[1].Value!,
-    };
-}
-
 var context = dbContext.Users.Paginate(Definition, PaginationDirection.Forward, reference);
+
+var users = await context.Query
+    .Take(20)
+    .ToListAsync();
+
+context.EnsureCorrectOrder(users);
 ```
 
-This keeps the transport token opaque while still using loose typing on the server side.
+### Example: HasNextAsync on Projected DTOs
+
+```cs
+var context = dbContext.Users.Paginate(Definition, PaginationDirection.Forward, reference);
+
+var users = await context.Query
+    .Take(20)
+    .Select(u => new UserDto(u.Id, u.Name, u.Created))
+    .ToListAsync();
+
+context.EnsureCorrectOrder(users);
+
+// HasNextAsync works with projected DTOs, not just entities.
+var hasNext = await context.HasNextAsync(users);
+```
 
 ## Nested Properties
 
@@ -85,7 +60,7 @@ When the definition uses nested properties, the reference must have matching nes
 
 ```cs
 // Definition accesses x.Details.Created
-var definition = PaginationQuery.Build<User>(b => b.Ascending(x => x.Details.Created));
+var definition = PaginationQuery.Build<User>(b => b.Ascending(x => x.Details.Created).Ascending(x => x.Id));
 
 // Reference must also have a Details.Created property:
 var reference = new
@@ -94,9 +69,13 @@ var reference = new
     {
         Created = someDate,
     },
+    Id = someId,
 };
 
-var context = dbContext.Users.Paginate(definition, direction, reference);
+var page = await dbContext.Users
+    .Keyset(definition)
+    .AfterEntity(reference)
+    .TakeAsync(20);
 ```
 
 ## Requirements
@@ -104,9 +83,8 @@ var context = dbContext.Users.Paginate(definition, direction, reference);
 - Property names must match the pagination column names **exactly** (case-sensitive).
 - Property types must be compatible (same type or implicitly convertible).
 - Missing properties throw `IncompatibleReferenceException` with details about which property was expected and on which types.
-- For string-based definitions built with `PaginationQuery.Build<T>(string, ...)`, the loose reference must still expose the same property names as the resolved definition.
 
 ## See Also
 
-- [API Reference](api-reference.md#exceptions) — `IncompatibleReferenceException` details
-- [Patterns](patterns.md) — Standard pagination patterns
+- [API Reference](api-reference.md#exceptions) -- `IncompatibleReferenceException` details
+- [Patterns](patterns.md) -- Standard pagination patterns

@@ -132,24 +132,21 @@ internal sealed class PaginationColumn<T, TColumn>(
     bool isDescending,
     Expression<Func<T, TColumn>> expression) : PaginationColumn<T>(isDescending, expression)
 {
+    private static readonly MethodInfo s_orderBy = QueryableMethods.Get(nameof(Queryable.OrderBy), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
+    private static readonly MethodInfo s_orderByDesc = QueryableMethods.Get(nameof(Queryable.OrderByDescending), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
+    private static readonly MethodInfo s_thenBy = QueryableMethods.Get(nameof(Queryable.ThenBy), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
+    private static readonly MethodInfo s_thenByDesc = QueryableMethods.Get(nameof(Queryable.ThenByDescending), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
+
     private readonly ConcurrentDictionary<Type, Func<object, TColumn>> _referenceTypeToCompiledAccessMap = new();
     private volatile Type? _lastAccessType;
     private volatile Func<object, TColumn>? _lastAccessFunc;
     private Expression<Func<T, TColumn>>? _cachedOrderByLambda;
 
-    /// <summary>
-    /// Gets the strongly-typed lambda expression for this column.
-    /// </summary>
     public new Expression<Func<T, TColumn>> LambdaExpression => (Expression<Func<T, TColumn>>)base.LambdaExpression;
 
-    /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override Expression MakeAccessExpression(ParameterExpression parameter) => AdaptingExpressionVisitor.AdaptParameter(LambdaExpression, parameter).Body;
 
-    /// <summary>
-    /// Returns the cached OrderBy lambda, building it on first access by adapting the column's
-    /// lambda expression to a fresh parameter.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private Expression<Func<T, TColumn>> GetOrderByLambda()
     {
@@ -158,20 +155,24 @@ internal sealed class PaginationColumn<T, TColumn>(
             Expression.Parameter(typeof(T), "x"));
     }
 
-    /// <inheritdoc />
     public override IOrderedQueryable<T> ApplyOrderBy(IQueryable<T> query, PaginationDirection direction)
     {
-        var lambda = GetOrderByLambda();
         var descending = direction == PaginationDirection.Backward ? !IsDescending : IsDescending;
-        return descending ? Queryable.OrderByDescending(query, lambda) : Queryable.OrderBy(query, lambda);
+        return ApplyDirect(query, descending ? s_orderByDesc : s_orderBy);
     }
 
-    /// <inheritdoc />
     public override IOrderedQueryable<T> ApplyThenOrderBy(IOrderedQueryable<T> query, PaginationDirection direction)
     {
-        var lambda = GetOrderByLambda();
         var descending = direction == PaginationDirection.Backward ? !IsDescending : IsDescending;
-        return descending ? Queryable.ThenByDescending(query, lambda) : Queryable.ThenBy(query, lambda);
+        return ApplyDirect(query, descending ? s_thenByDesc : s_thenBy);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private IOrderedQueryable<T> ApplyDirect(IQueryable<T> query, MethodInfo method)
+    {
+        var lambda = GetOrderByLambda();
+        var call = FastExpressions.Call(method, query.Expression, FastExpressions.Quote(lambda));
+        return (IOrderedQueryable<T>)query.Provider.CreateQuery<T>(call);
     }
 
     /// <inheritdoc />

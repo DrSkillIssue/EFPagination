@@ -11,6 +11,12 @@
 dotnet add package EFPagination
 ```
 
+For ASP.NET Core integration (optional):
+
+```
+dotnet add package EFPagination.AspNetCore
+```
+
 ## Your First Query
 
 Add the `using` directive:
@@ -29,103 +35,118 @@ private static readonly PaginationQueryDefinition<User> UserDefinition =
 Query the first page:
 
 ```cs
-var context = dbContext.Users.Paginate(UserDefinition);
+var page = await dbContext.Users
+    .Keyset(UserDefinition)
+    .TakeAsync(20);
 
-var users = await context.Query
-    .Take(20)
-    .ToListAsync();
-
-// Always call this — it fixes ordering when paginating backward.
-context.EnsureCorrectOrder(users);
+// page.Items          -- the 20 (or fewer) items
+// page.NextCursor     -- opaque token for the next page, or null when no more
+// page.PreviousCursor -- null on the first page
+// page.TotalCount     -- -1 (not requested)
 ```
 
-Query the next page by passing the last item as a reference:
+Query the next page by passing the cursor from the previous response:
 
 ```cs
-var nextContext = dbContext.Users.Paginate(
-    UserDefinition,
-    PaginationDirection.Forward,
-    users[^1]);
-
-var nextUsers = await nextContext.Query
-    .Take(20)
-    .ToListAsync();
-
-nextContext.EnsureCorrectOrder(nextUsers);
+var nextPage = await dbContext.Users
+    .Keyset(UserDefinition)
+    .After(page.NextCursor!)
+    .TakeAsync(20);
 ```
 
-Check if there are more pages:
+Query the previous page:
 
 ```cs
-var hasPrevious = await context.HasPreviousAsync(users);
-var hasNext = await context.HasNextAsync(users);
+var prevPage = await dbContext.Users
+    .Keyset(UserDefinition)
+    .Before(nextPage.PreviousCursor!)
+    .TakeAsync(20);
 ```
 
-`HasPreviousAsync`/`HasNextAsync` are useful for rendering Previous/Next buttons in your UI.
+## Including Total Count
+
+Pass `.IncludeCount()` to execute an additional `COUNT(*)` query:
+
+```cs
+var page = await dbContext.Users
+    .Keyset(UserDefinition)
+    .IncludeCount()
+    .TakeAsync(20);
+
+// page.TotalCount -- total number of rows in the source query
+```
+
+## Clamping Page Size
+
+Use `.MaxPageSize()` to set an upper bound on the page size. Requests exceeding this value are clamped. The default max is 500:
+
+```cs
+var page = await dbContext.Users
+    .Keyset(UserDefinition)
+    .After(cursor)
+    .MaxPageSize(100)
+    .TakeAsync(requestedPageSize);
+```
+
+## Streaming All Pages
+
+To process all pages sequentially (data exports, background jobs):
+
+```cs
+await foreach (var batch in dbContext.Users.Keyset(UserDefinition).StreamAsync(500))
+{
+    foreach (var user in batch)
+        ProcessUser(user);
+}
+```
+
+## ASP.NET Core Endpoint
+
+With the `EFPagination.AspNetCore` package, bind pagination parameters from the query string and return a JSON-serializable response:
+
+```cs
+using EFPagination;
+using EFPagination.AspNetCore;
+
+private static readonly PaginationQueryDefinition<User> Definition =
+    PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
+
+app.MapGet("/api/users", async (AppDbContext db, [AsParameters] PaginationRequest request) =>
+{
+    var page = await db.Users
+        .Keyset(Definition)
+        .FromRequest(request)
+        .MaxPageSize(100)
+        .TakeAsync(request.PageSize);
+
+    return page.ToPaginatedResponse(u => new UserDto(u.Id, u.Name, u.Created));
+});
+```
+
+`PaginationRequest` binds `After`, `Before`, `PageSize`, `SortBy`, and `SortDir` from the query string. `ToPaginatedResponse` converts the `CursorPage<T>` to a `PaginatedResponse<TOut>` with `Items`, `NextCursor`, `PreviousCursor`, and `TotalCount`.
+
+For dynamic sorting via a registry:
+
+```cs
+private static readonly PaginationSortRegistry<User> Sorts = new(
+    defaultDefinition: Definition,
+    SortField.Create<User>("created", "Created"),
+    SortField.Create<User>("name", "Name"));
+
+app.MapGet("/api/users", async (AppDbContext db, [AsParameters] PaginationRequest request) =>
+{
+    var page = await db.Users
+        .Keyset(Sorts, request)
+        .MaxPageSize(100)
+        .TakeAsync(request.PageSize);
+
+    return page.ToPaginatedResponse(u => new UserDto(u.Id, u.Name, u.Created));
+});
+```
 
 ## Next Steps
 
-- [Pagination Patterns](patterns.md) — All four navigation patterns (first, last, previous, next)
-- [Prebuilt Definitions](prebuilt-definitions.md) — Why and how to cache pagination definitions
-- [API Reference](api-reference.md#paginationcursor) — Cursor encoding/decoding, sort registries, and executor helpers
-- [Database Indexing](indexing.md) — Create compatible indexes for optimal performance
-
-## Cursor-Based API Example
-
-For HTTP APIs, use `PaginationExecutor` and `PaginationCursor` to return page metadata and a resumable cursor in one flow:
-
-```cs
-private static readonly PaginationQueryDefinition<User> UserDefinition =
-    PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
-
-public async Task<object> GetUsersAsync(string? after)
-{
-    ColumnValue[] cursorValues =
-    [
-        new(nameof(User.Created), null),
-        new(nameof(User.Id), null),
-    ];
-
-    object? reference = null;
-    int? totalCountFromCursor = null;
-
-    if (!string.IsNullOrWhiteSpace(after) &&
-        PaginationCursor.TryDecode(after, cursorValues, out _, out _, out var totalCount))
-    {
-        reference = new
-        {
-            Created = (DateTime)cursorValues[0].Value!,
-            Id = (int)cursorValues[1].Value!,
-        };
-        totalCountFromCursor = totalCount;
-    }
-
-    var page = await PaginationExecutor.ExecuteAsync(
-        dbContext.Users,
-        UserDefinition,
-        pageSize: 20,
-        reference,
-        includeCount: reference is null);
-
-    string? next = null;
-    if (page.Items.Count > 0 && page.HasMore)
-    {
-        var last = page.Items[^1];
-        next = PaginationCursor.Encode(
-        [
-            new(nameof(User.Created), last.Created),
-            new(nameof(User.Id), last.Id),
-        ],
-        new PaginationCursorOptions(
-            TotalCount: page.TotalCount >= 0 ? page.TotalCount : totalCountFromCursor));
-    }
-
-    return new
-    {
-        Items = page.Items,
-        page.HasMore,
-        TotalCount = page.TotalCount >= 0 ? page.TotalCount : totalCountFromCursor,
-        NextCursor = next,
-    };
-}
-```
+- [Pagination Patterns](patterns.md) -- All navigation patterns (first, last, previous, next) and streaming
+- [Prebuilt Definitions](prebuilt-definitions.md) -- Why and how to cache pagination definitions
+- [API Reference](api-reference.md) -- Full API surface including cursor encoding, sort registries, low-level Paginate, and ASP.NET Core helpers
+- [Database Indexing](indexing.md) -- Create compatible indexes for optimal performance

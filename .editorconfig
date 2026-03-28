@@ -482,6 +482,15 @@ dotnet_diagnostic.CA5403.severity = warning
 dotnet_diagnostic.CA5404.severity = warning
 dotnet_diagnostic.CA5405.severity = warning
 
+# XML documentation completeness
+dotnet_diagnostic.CS1573.severity = warning
+dotnet_diagnostic.CS1572.severity = warning
+dotnet_diagnostic.CS1571.severity = warning
+dotnet_diagnostic.CS1574.severity = warning
+dotnet_diagnostic.CS1580.severity = warning
+dotnet_diagnostic.CS1581.severity = warning
+dotnet_diagnostic.CS1584.severity = warning
+
 # IDE diagnostics
 dotnet_diagnostic.IDE0001.severity = warning
 dotnet_diagnostic.IDE0002.severity = warning

@@ -90,105 +90,84 @@ internal sealed class CachedPredicateTemplate<T>(
     }
 
     /// <summary>
-    /// Holds the pre-built template expression tree and pre-allocated per-call resources.
-    /// Designed for reuse across calls: <see cref="ValueHolder"/> instances and their corresponding
-    /// expression nodes are allocated once at construction and mutated in place on each call.
+    /// Holds the pre-built template expression tree. Each call to <c>Instantiate</c> allocates
+    /// its own <see cref="ValueHolder"/> instances and substitutes them into the template,
+    /// producing a thread-safe per-call lambda expression.
     /// </summary>
-    internal sealed class TemplateInstance
+    internal sealed class TemplateInstance(
+        Expression templateBody,
+        ParameterExpression entityParam,
+        ParameterExpression[] placeholders,
+        int columnCount)
     {
-        private readonly Expression _templateBody;
-        private readonly ParameterExpression _entityParam;
-        private readonly PlaceholderSubstitutionVisitor _visitor;
-        private readonly ValueHolder[] _valueHolders;
-        private readonly Expression[] _valueExpressions;
-        private Expression<Func<T, bool>>? _cachedLambda;
+        private readonly Expression _templateBody = templateBody;
+        private readonly ParameterExpression _entityParam = entityParam;
+        private readonly ParameterExpression[] _placeholders = placeholders;
+        private readonly int _columnCount = columnCount;
 
-        /// <summary>
-        /// Initializes the template instance, pre-allocating all per-call resources.
-        /// </summary>
-        /// <param name="templateBody">The expression tree body containing placeholder nodes.</param>
-        /// <param name="entityParam">The entity parameter expression for the outer lambda.</param>
-        /// <param name="placeholders">The placeholder parameter expressions to be substituted per call.</param>
-        /// <param name="columnCount">The number of pagination columns.</param>
-        public TemplateInstance(
-            Expression templateBody,
-            ParameterExpression entityParam,
-            ParameterExpression[] placeholders,
-            int columnCount)
-        {
-            _templateBody = templateBody;
-            _entityParam = entityParam;
+        private readonly SpineReconstructor? _spineReconstructor = SpineReconstructor.TryCreate(templateBody, placeholders);
 
-            _valueHolders = new ValueHolder[columnCount];
-            _valueExpressions = new Expression[columnCount];
-            for (var i = 0; i < columnCount; i++)
-            {
-                _valueHolders[i] = new ValueHolder();
-                _valueExpressions[i] = Expression.Field(
-                    Expression.Constant(_valueHolders[i]), ValueHolder.ValueField);
-            }
-
-            _visitor = new PlaceholderSubstitutionVisitor(placeholders, _valueExpressions);
-        }
-
-        /// <summary>
-        /// Produces a concrete predicate expression by updating <see cref="ValueHolder.Value"/> fields
-        /// and walking the template tree to substitute placeholders with value expressions.
-        /// </summary>
-        /// <param name="referenceValues">The column values to substitute, one per placeholder.</param>
-        /// <returns>A ready-to-use lambda predicate expression.</returns>
         public Expression<Func<T, bool>> Instantiate(object?[] referenceValues)
         {
-            for (var i = 0; i < referenceValues.Length; i++)
+            var replacements = RentReplacements();
+            for (var i = 0; i < _columnCount; i++)
             {
-                _valueHolders[i].Value = referenceValues[i];
+                var holder = new ValueHolder { Value = referenceValues[i] };
+                replacements[i] = Expression.Field(
+                    Expression.Constant(holder), ValueHolder.ValueField);
             }
-
-            return _cachedLambda ??= BuildLambda();
+            return BuildLambda(replacements);
         }
 
         public Expression<Func<T, bool>> Instantiate<TReference>(PaginationColumn<T>[] columns, TReference reference)
         {
-            for (var i = 0; i < columns.Length; i++)
+            var replacements = RentReplacements();
+            for (var i = 0; i < _columnCount; i++)
             {
-                _valueHolders[i].Value = columns[i].ObtainValue(reference);
+                var holder = new ValueHolder { Value = columns[i].ObtainValue(reference) };
+                replacements[i] = Expression.Field(
+                    Expression.Constant(holder), ValueHolder.ValueField);
             }
-
-            return _cachedLambda ??= BuildLambda();
+            return BuildLambda(replacements);
         }
 
         public Expression<Func<T, bool>> InstantiateFromColumnValues(
             PaginationColumn<T>[] columns,
             ReadOnlySpan<ColumnValue> values)
         {
-            if (TryPopulateFromPositionalValues(columns, values))
-                return _cachedLambda ??= BuildLambda();
+            var replacements = RentReplacements();
 
-            for (var i = 0; i < columns.Length; i++)
+            if (!TryPopulatePositional(columns, values, replacements))
             {
-                var columnName = columns[i].GetRequiredPropertyNameForColumnValues();
-                var found = false;
-                for (var j = 0; j < values.Length; j++)
+                for (var i = 0; i < columns.Length; i++)
                 {
-                    if (string.Equals(values[j].Name, columnName, StringComparison.OrdinalIgnoreCase))
+                    var columnName = columns[i].GetRequiredPropertyNameForColumnValues();
+                    var found = false;
+                    for (var j = 0; j < values.Length; j++)
                     {
-                        _valueHolders[i].Value = values[j].Value;
-                        found = true;
-                        break;
+                        if (string.Equals(values[j].Name, columnName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            var holder = new ValueHolder { Value = values[j].Value };
+                            replacements[i] = Expression.Field(
+                                Expression.Constant(holder), ValueHolder.ValueField);
+                            found = true;
+                            break;
+                        }
                     }
-                }
 
-                if (!found)
-                    ThrowMissingColumn(columnName);
+                    if (!found)
+                        ThrowMissingColumn(columnName);
+                }
             }
 
-            return _cachedLambda ??= BuildLambda();
+            return BuildLambda(replacements);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryPopulateFromPositionalValues(
+        private static bool TryPopulatePositional(
             PaginationColumn<T>[] columns,
-            ReadOnlySpan<ColumnValue> values)
+            ReadOnlySpan<ColumnValue> values,
+            Expression[] replacements)
         {
             if (values.Length != columns.Length)
                 return false;
@@ -201,16 +180,41 @@ internal sealed class CachedPredicateTemplate<T>(
 
             for (var i = 0; i < columns.Length; i++)
             {
-                _valueHolders[i].Value = values[i].Value;
+                var holder = new ValueHolder { Value = values[i].Value };
+                replacements[i] = Expression.Field(
+                    Expression.Constant(holder), ValueHolder.ValueField);
             }
 
             return true;
         }
 
-        private Expression<Func<T, bool>> BuildLambda()
+        [ThreadStatic]
+        private static Expression[]? s_replacements;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private Expression[] RentReplacements()
         {
-            var body = _visitor.Visit(_templateBody) ?? throw new InvalidOperationException("Failed to build cached pagination predicate.");
-            return Expression.Lambda<Func<T, bool>>(body, _entityParam);
+            var arr = s_replacements;
+            if (arr is not null && arr.Length >= _columnCount)
+                return arr;
+            arr = new Expression[Math.Max(_columnCount, 4)];
+            s_replacements = arr;
+            return arr;
+        }
+
+        [ThreadStatic]
+        private static PlaceholderSubstitutionVisitor? s_visitor;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private Expression<Func<T, bool>> BuildLambda(Expression[] replacements)
+        {
+            if (_spineReconstructor is not null)
+                return _spineReconstructor.Reconstruct<T>(replacements, _entityParam);
+
+            var visitor = s_visitor ??= new PlaceholderSubstitutionVisitor();
+            visitor.Reset(_placeholders, replacements);
+            var body = visitor.Visit(_templateBody) ?? throw new InvalidOperationException("Failed to build cached pagination predicate.");
+            return FastLambda<T>.Create(body, _entityParam);
         }
 
         [DoesNotReturn]
@@ -223,21 +227,21 @@ internal sealed class CachedPredicateTemplate<T>(
     /// nodes with their corresponding value expressions. Optimized with a type-dispatch short-circuit
     /// in <see cref="Visit"/> to skip leaf node types that can never be placeholders.
     /// </summary>
-    /// <remarks>
-    /// Initializes the visitor with the placeholder-to-replacement mapping.
-    /// </remarks>
-    /// <param name="placeholders">The placeholder parameter expressions to match by reference.</param>
-    /// <param name="replacements">The replacement expressions (one per placeholder).</param>
-    private sealed class PlaceholderSubstitutionVisitor(
-        ParameterExpression[] placeholders,
-        Expression[] replacements) : ExpressionVisitor
+    private sealed class PlaceholderSubstitutionVisitor : ExpressionVisitor
     {
-        private readonly ParameterExpression[] _placeholders = placeholders;
-        private readonly Expression[] _replacements = replacements;
+        private ParameterExpression[] _placeholders = null!;
+        private Expression[] _replacements = null!;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Reset(ParameterExpression[] placeholders, Expression[] replacements)
+        {
+            _placeholders = placeholders;
+            _replacements = replacements;
+        }
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0072 // Populate switch — only 4 of ~85 ExpressionType members are relevant; discard handles the rest
+#pragma warning disable IDE0072
         public override Expression? Visit(Expression? node)
         {
             if (node is null)

@@ -13,6 +13,20 @@ public sealed class PaginationValues<T>
         Values = values;
     }
 
+    /// <summary>
+    /// Creates a new <see cref="PaginationValues{T}"/> from the specified ordered values.
+    /// Values must be provided in the same order as the columns in the pagination definition.
+    /// </summary>
+    /// <param name="values">The ordered boundary values.</param>
+    /// <returns>A new <see cref="PaginationValues{T}"/> instance.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> is <see langword="null"/>.</exception>
+#pragma warning disable CA1000
+    public static PaginationValues<T> Create(params object?[] values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        return new PaginationValues<T>(values);
+    }
+
     internal object?[] Values { get; }
 
     /// <summary>

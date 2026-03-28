@@ -24,10 +24,12 @@ public class PaginationExecutorIntegrationTests
     {
         var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
 
-        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, null, includeCount: true);
+        var page = await PaginationExecutor.ExecuteAsync(
+            _dbContext.MainModels, definition,
+            new ExecutionOptions(PageSize: 10, IncludeCount: true));
 
         page.Items.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(1, 10), options => options.WithStrictOrdering());
-        page.HasMore.Should().BeTrue();
+        page.HasNext.Should().BeTrue();
         page.TotalCount.Should().Be(99);
     }
 
@@ -37,10 +39,13 @@ public class PaginationExecutorIntegrationTests
         var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
         var reference = await _dbContext.MainModels.OrderBy(x => x.Id).Skip(9).FirstAsync();
 
-        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, reference, includeCount: false);
+        var page = await PaginationExecutor.ExecuteAsync(
+            _dbContext.MainModels, definition,
+            new ExecutionOptions(PageSize: 10),
+            reference);
 
         page.Items.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(11, 10), options => options.WithStrictOrdering());
-        page.HasMore.Should().BeTrue();
+        page.HasNext.Should().BeTrue();
         page.TotalCount.Should().Be(-1);
     }
 
@@ -55,10 +60,13 @@ public class PaginationExecutorIntegrationTests
             new(nameof(MainModel.Id), reference.Id),
         ];
 
-        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, includeCount: false, referenceValues);
+        var page = await PaginationExecutor.ExecuteAsync(
+            _dbContext.MainModels, definition,
+            new ExecutionOptions(PageSize: 10),
+            referenceValues);
 
         page.Items.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(11, 10), options => options.WithStrictOrdering());
-        page.HasMore.Should().BeTrue();
+        page.HasNext.Should().BeTrue();
         page.TotalCount.Should().Be(-1);
     }
 
@@ -72,7 +80,10 @@ public class PaginationExecutorIntegrationTests
             new(nameof(MainModel.Id), 10),
         ];
 
-        var act = () => PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, includeCount: false, referenceValues);
+        var act = () => PaginationExecutor.ExecuteAsync(
+            _dbContext.MainModels, definition,
+            new ExecutionOptions(PageSize: 10),
+            referenceValues);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Direct column-value pagination only supports member-access columns*");
@@ -85,10 +96,13 @@ public class PaginationExecutorIntegrationTests
         var filtered = _dbContext.MainModels.Where(x => x.IsDone);
         var reference = await filtered.OrderBy(x => x.Id).Skip(39).FirstAsync();
 
-        var page = await PaginationExecutor.ExecuteAsync(filtered, definition, 10, reference, includeCount: true);
+        var page = await PaginationExecutor.ExecuteAsync(
+            filtered, definition,
+            new ExecutionOptions(PageSize: 10, IncludeCount: true),
+            reference);
 
         page.Items.Select(x => x.Id).Should().BeEquivalentTo(s_expectedLastFilteredPageIds, options => options.WithStrictOrdering());
-        page.HasMore.Should().BeFalse();
+        page.HasNext.Should().BeFalse();
         page.TotalCount.Should().Be(49);
     }
 
@@ -99,8 +113,39 @@ public class PaginationExecutorIntegrationTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = () => PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, null, includeCount: true, cts.Token);
+        var act = () => PaginationExecutor.ExecuteAsync(
+            _dbContext.MainModels, definition,
+            new ExecutionOptions(PageSize: 10, IncludeCount: true),
+            ct: cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Backward_ReturnsReversedItems_HasMore()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var reference = await _dbContext.MainModels.OrderBy(x => x.Id).Skip(49).FirstAsync();
+
+        var page = await PaginationExecutor.ExecuteAsync(
+            _dbContext.MainModels, definition,
+            new ExecutionOptions(PageSize: 10, Direction: PaginationDirection.Backward),
+            reference);
+
+        page.Items.Should().BeInAscendingOrder(x => x.Id);
+        page.Items.Last().Id.Should().BeLessThan(reference.Id);
+        page.HasNext.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MaxPageSize_ClampsResult()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+
+        var page = await PaginationExecutor.ExecuteAsync(
+            _dbContext.MainModels, definition,
+            new ExecutionOptions(PageSize: 10_000, MaxPageSize: 5));
+
+        page.Items.Should().HaveCountLessThanOrEqualTo(5);
     }
 }

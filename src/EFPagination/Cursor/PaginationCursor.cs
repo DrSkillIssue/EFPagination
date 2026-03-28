@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace EFPagination;
@@ -17,6 +18,7 @@ public static class PaginationCursor
     private const int DateOnlyFormatLength = 10;
     private const int MaxTimeOnlyFormatLength = 16;
     private const int MaxTimeSpanFormatLength = 26;
+    private const int HmacTruncatedLength = 16;
 
     private const byte CursorValueKindNull = 0;
     private const byte CursorValueKindString = 1;
@@ -44,6 +46,7 @@ public static class PaginationCursor
     private static readonly JsonWriterOptions s_writerOptions = new() { SkipValidation = true };
     private static readonly object s_boxedTrue = true;
     private static readonly object s_boxedFalse = false;
+    private static readonly ConcurrentDictionary<string, Type> s_allowedEnumTypes = new();
     private static readonly ConcurrentDictionary<string, Type> s_enumTypeCache = new();
     private static readonly ConcurrentDictionary<Type, EnumMetadata> s_enumMetadataCache = new();
 
@@ -81,6 +84,9 @@ public static class PaginationCursor
 
         writer.WriteStartObject();
 
+        if (opts.SchemaFingerprint.HasValue)
+            writer.WriteNumber("f"u8, opts.SchemaFingerprint.GetValueOrDefault());
+
         if (opts.SortBy is not null)
             writer.WriteString("s"u8, opts.SortBy);
 
@@ -98,6 +104,14 @@ public static class PaginationCursor
 
         writer.WriteEndObject();
         writer.Flush();
+
+        if (opts.SigningKey is not null)
+        {
+            Span<byte> hmacFull = stackalloc byte[HMACSHA256.HashSizeInBytes];
+            HMACSHA256.HashData(opts.SigningKey, bufferWriter.WrittenSpan, hmacFull);
+            hmacFull[..HmacTruncatedLength].CopyTo(bufferWriter.GetSpan(HmacTruncatedLength));
+            bufferWriter.Advance(HmacTruncatedLength);
+        }
 
         var encodedLength = Base64Url.GetEncodedLength(bufferWriter.WrittenCount);
 
@@ -127,7 +141,11 @@ public static class PaginationCursor
                 break;
             case char c:
                 writer.WriteNumberValue(CursorValueKindChar);
-                writer.WriteStringValue([c]);
+#pragma warning disable IDE0302
+                Span<char> charSpan = stackalloc char[1];
+#pragma warning restore IDE0302
+                charSpan[0] = c;
+                writer.WriteStringValue(charSpan);
                 break;
             case byte b8:
                 writer.WriteNumberValue(CursorValueKindByte);
@@ -221,10 +239,11 @@ public static class PaginationCursor
     /// <param name="encoded">The encoded cursor token.</param>
     /// <param name="values">The destination buffer. Each entry should already contain the expected column name.</param>
     /// <param name="written">When this method returns <see langword="true"/>, contains the number of values decoded into <paramref name="values"/>.</param>
+    /// <param name="signingKey">The HMAC-SHA256 signing key for verification, or <see langword="null"/> to skip verification.</param>
     /// <returns><see langword="true"/> if the cursor was decoded successfully; otherwise <see langword="false"/>.</returns>
-    public static bool TryDecode(ReadOnlySpan<char> encoded, Span<ColumnValue> values, out int written)
+    public static bool TryDecode(ReadOnlySpan<char> encoded, Span<ColumnValue> values, out int written, byte[]? signingKey = null)
     {
-        return TryDecode(encoded, values, out written, out _, out _);
+        return TryDecode(encoded, values, out written, out _, out _, signingKey);
     }
 
     /// <summary>
@@ -269,7 +288,7 @@ public static class PaginationCursor
         ArgumentNullException.ThrowIfNull(definition);
 
         var orderedValues = new object?[definition.ColumnCount];
-        if (TryDecodeOrdered(encoded, orderedValues, out written, out sortBy, out totalCount))
+        if (TryDecodeOrdered(encoded, orderedValues, out written, out sortBy, out totalCount, definition.SchemaFingerprint))
         {
             values = new PaginationValues<T>(orderedValues);
             return true;
@@ -287,15 +306,16 @@ public static class PaginationCursor
     /// <param name="written">When this method returns <see langword="true"/>, contains the number of values decoded into <paramref name="values"/>.</param>
     /// <param name="sortBy">When this method returns <see langword="true"/>, contains the decoded logical sort key, if present.</param>
     /// <param name="totalCount">When this method returns <see langword="true"/>, contains the decoded total count, if present.</param>
-    /// <returns><see langword="true"/> if the cursor was decoded successfully; otherwise <see langword="false"/>.</returns>
-    public static bool TryDecode(ReadOnlySpan<char> encoded, Span<ColumnValue> values, out int written, out string? sortBy, out int? totalCount)
+    /// <param name="signingKey">The HMAC-SHA256 signing key for verification, or <see langword="null"/> to skip verification.</param>
+    /// <returns><see langword="true"/> if the cursor was decoded and verified successfully; otherwise <see langword="false"/>.</returns>
+    public static bool TryDecode(ReadOnlySpan<char> encoded, Span<ColumnValue> values, out int written, out string? sortBy, out int? totalCount, byte[]? signingKey = null)
     {
-        return TryDecodeCore(encoded, values, null, out written, out sortBy, out totalCount);
+        return TryDecodeCore(encoded, values, null, out written, out sortBy, out totalCount, signingKey: signingKey);
     }
 
-    private static bool TryDecodeOrdered(ReadOnlySpan<char> encoded, object?[] values, out int written, out string? sortBy, out int? totalCount)
+    private static bool TryDecodeOrdered(ReadOnlySpan<char> encoded, object?[] values, out int written, out string? sortBy, out int? totalCount, uint? expectedFingerprint = null)
     {
-        return TryDecodeCore(encoded, default, values, out written, out sortBy, out totalCount);
+        return TryDecodeCore(encoded, default, values, out written, out sortBy, out totalCount, expectedFingerprint);
     }
 
     private static bool TryDecodeCore(
@@ -304,7 +324,9 @@ public static class PaginationCursor
         object?[]? orderedValues,
         out int written,
         out string? sortBy,
-        out int? totalCount)
+        out int? totalCount,
+        uint? expectedFingerprint = null,
+        byte[]? signingKey = null)
     {
         written = 0;
         sortBy = null;
@@ -324,10 +346,29 @@ public static class PaginationCursor
             if (!Base64Url.TryDecodeFromChars(encoded, buffer, out var bytesWritten))
                 return false;
 
+            if (signingKey is not null)
+            {
+                if (bytesWritten < HmacTruncatedLength)
+                    return false;
+
+                var payloadLength = bytesWritten - HmacTruncatedLength;
+                var payload = buffer[..payloadLength];
+                var signature = buffer[payloadLength..bytesWritten];
+
+                Span<byte> expected = stackalloc byte[HMACSHA256.HashSizeInBytes];
+                HMACSHA256.HashData(signingKey, payload, expected);
+
+                if (!CryptographicOperations.FixedTimeEquals(signature, expected[..HmacTruncatedLength]))
+                    return false;
+
+                bytesWritten = payloadLength;
+            }
+
             var reader = new Utf8JsonReader(buffer[..bytesWritten]);
             if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
                 return false;
 
+            var sawFingerprint = false;
             var sawSortBy = false;
             var sawTotalCount = false;
             var sawValues = false;
@@ -347,7 +388,20 @@ public static class PaginationCursor
                 if (reader.TokenType != JsonTokenType.PropertyName)
                     return false;
 
-                if (reader.ValueTextEquals("s"u8))
+                if (reader.ValueTextEquals("f"u8))
+                {
+                    if (sawFingerprint || !reader.Read() || reader.TokenType != JsonTokenType.Number)
+                        return false;
+
+                    if (!reader.TryGetUInt32(out var fingerprint))
+                        return false;
+
+                    if (expectedFingerprint.HasValue && fingerprint != expectedFingerprint.Value)
+                        return false;
+
+                    sawFingerprint = true;
+                }
+                else if (reader.ValueTextEquals("s"u8))
                 {
                     if (sawSortBy || !reader.Read())
                         return false;
@@ -723,6 +777,23 @@ public static class PaginationCursor
         return true;
     }
 
+    /// <summary>
+    /// Registers an enum type as allowed for cursor decoding.
+    /// Called automatically by <see cref="PaginationBuilder{T}"/> when a column uses an enum type.
+    /// </summary>
+    internal static void RegisterEnumType(Type enumType)
+    {
+        var metadata = s_enumMetadataCache.GetOrAdd(enumType, static t =>
+        {
+            var fullName = t.FullName ?? ThrowEnumNoFullName(t);
+            var assemblyName = t.Assembly.GetName().Name ?? ThrowEnumNoAssemblyName(t);
+            return new EnumMetadata(
+                string.Concat(fullName, ", ", assemblyName),
+                Type.GetTypeCode(Enum.GetUnderlyingType(t)));
+        });
+        s_allowedEnumTypes.TryAdd(metadata.StableName, enumType);
+    }
+
     private static bool TryResolveEnumType(string typeName, out Type enumType)
     {
         if (s_enumTypeCache.TryGetValue(typeName, out var cachedType))
@@ -731,8 +802,7 @@ public static class PaginationCursor
             return true;
         }
 
-        enumType = Type.GetType(typeName, throwOnError: false)!;
-        if (enumType is null || !enumType.IsEnum)
+        if (!s_allowedEnumTypes.TryGetValue(typeName, out enumType!))
             return false;
 
         s_enumTypeCache.TryAdd(typeName, enumType);

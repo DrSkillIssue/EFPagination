@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="EFPagination.Tests" />
+    <InternalsVisibleTo Include="EFPagination.Benchmarks" />
+    <InternalsVisibleTo Include="EFPagination.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
 

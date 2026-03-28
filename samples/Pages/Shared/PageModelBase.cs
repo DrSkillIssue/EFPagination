@@ -6,10 +6,6 @@ using EFPagination;
 
 namespace Sample.Pages.Shared;
 
-/// <summary>
-/// Base class for pagination sample pages. Encapsulates the common
-/// first/last/after/before dispatch logic so each page only defines its sort order.
-/// </summary>
 public abstract class PageModelBase(AppDbContext dbContext) : PageModel
 {
     protected AppDbContext DbContext { get; } = dbContext;
@@ -19,57 +15,69 @@ public abstract class PageModelBase(AppDbContext dbContext) : PageModel
     private List<User> _users = [];
 
     public IReadOnlyList<User> Users => _users;
-    public int TotalCount { get; private set; }
     public bool HasPrevious { get; private set; }
     public bool HasNext { get; private set; }
+    public string? NextCursor { get; private set; }
+    public string? PreviousCursor { get; private set; }
+    public int TotalCount { get; private set; }
     public long ElapsedMs { get; private set; }
-    public long TotalElapsedMs { get; private set; }
 
-    /// <summary>
-    /// The prebuilt pagination definition for this page's sort order.
-    /// </summary>
     protected abstract PaginationQueryDefinition<User> Definition { get; }
 
-    /// <summary>
-    /// Override to add <c>.Include()</c> calls for pages that need related data (e.g. nested properties).
-    /// </summary>
     protected virtual IQueryable<User> ApplyIncludes(IQueryable<User> query) => query;
 
-    /// <summary>
-    /// Override to customize how the reference entity is loaded (e.g. with <c>.Include()</c>).
-    /// </summary>
-    protected virtual Task<User?> GetReferenceAsync(int? after, int? before)
+    protected virtual bool RequiresIncludes => false;
+
+    public async Task OnGetAsync(string? after = null, string? before = null, bool first = false, bool last = false)
     {
-        var id = after ?? before;
-        return id is null ? Task.FromResult<User?>(null) : DbContext.Users.FindAsync(id.Value).AsTask();
-    }
+        var start = Stopwatch.GetTimestamp();
 
-    public async Task OnGetAsync(int? after, int? before, bool first = false, bool last = false)
-    {
-        var sw = Stopwatch.StartNew();
+        if (RequiresIncludes)
+        {
+            var direction = (last || before is not null)
+                ? PaginationDirection.Backward
+                : PaginationDirection.Forward;
 
-        var baseQuery = DbContext.Users.AsQueryable();
-        TotalCount = await baseQuery.CountAsync();
+            object? reference = null;
+            if (!first && !last)
+            {
+                var id = after ?? before;
+                if (id is not null && int.TryParse(id, out var parsed))
+                    reference = await DbContext.Users.Include(x => x.Details).FirstOrDefaultAsync(x => x.Id == parsed);
+            }
 
-        var direction = (last || before is not null)
-            ? PaginationDirection.Backward
-            : PaginationDirection.Forward;
+            var context = DbContext.Users.Paginate(Definition, direction, reference);
 
-        var reference = (first || last) ? null : await GetReferenceAsync(after, before);
+            _users = await ApplyIncludes(context.Query)
+                .Take(PageSize)
+                .ToListAsync();
 
-        var context = baseQuery.Paginate(Definition, direction, reference);
+            context.EnsureCorrectOrder(_users);
+            HasPrevious = await context.HasPreviousAsync(Users);
+            HasNext = await context.HasNextAsync(Users);
+            TotalCount = await DbContext.Users.CountAsync();
+        }
+        else
+        {
+            var builder = DbContext.Users.Keyset(Definition).IncludeCount();
 
-        _users = await ApplyIncludes(context.Query)
-            .Take(PageSize)
-            .ToListAsync();
+            if (last)
+                builder = builder.BeforeEntity(new { Id = int.MaxValue });
+            else if (before is not null)
+                builder = builder.Before(before);
+            else if (after is not null)
+                builder = builder.After(after);
 
-        context.EnsureCorrectOrder(_users);
+            var page = await builder.TakeAsync(PageSize);
 
-        ElapsedMs = sw.ElapsedMilliseconds;
+            _users = page.Items;
+            HasPrevious = page.PreviousCursor is not null;
+            HasNext = page.NextCursor is not null;
+            NextCursor = page.NextCursor;
+            PreviousCursor = page.PreviousCursor;
+            TotalCount = page.TotalCount;
+        }
 
-        HasPrevious = await context.HasPreviousAsync(Users);
-        HasNext = await context.HasNextAsync(Users);
-
-        TotalElapsedMs = sw.ElapsedMilliseconds;
+        ElapsedMs = Stopwatch.GetElapsedTime(start).Milliseconds;
     }
 }

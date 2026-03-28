@@ -37,6 +37,7 @@ public static class PaginationQuery
     /// <param name="tiebreakerDescending">Whether the tiebreaker sort is descending.</param>
     /// <returns>A cached, reusable pagination query definition.</returns>
     /// <exception cref="ArgumentException"><paramref name="propertyName"/> or <paramref name="tiebreaker"/> does not name a public instance property on <typeparamref name="T"/>.</exception>
+    /// <exception cref="InvalidOperationException">The definition cache for <typeparamref name="T"/> has exceeded its maximum size. Use <see cref="PaginationSortRegistry{T}"/> for user-controlled sort fields.</exception>
     public static PaginationQueryDefinition<T> Build<T>(
         string propertyName,
         bool descending,
@@ -44,6 +45,16 @@ public static class PaginationQuery
         bool tiebreakerDescending = false)
     {
         var key = (propertyName, descending, tiebreaker, tiebreakerDescending);
+        if (DefinitionCache<T>.Cache.TryGetValue(key, out var existing))
+            return existing;
+
+        if (DefinitionCache<T>.Cache.Count >= DefinitionCache<T>.MaxSize)
+        {
+            throw new InvalidOperationException(
+                $"PaginationQuery definition cache exceeded {DefinitionCache<T>.MaxSize} entries for type '{typeof(T).Name}'. " +
+                "Use PaginationSortRegistry for user-controlled sort fields.");
+        }
+
         return DefinitionCache<T>.Cache.GetOrAdd(key, static k =>
         {
             var (prop, desc, tie, tieDesc) = k;
@@ -72,6 +83,7 @@ public static class PaginationQuery
 
     private static class DefinitionCache<T>
     {
+        internal const int MaxSize = 256;
         internal static readonly ConcurrentDictionary<(string, bool, string?, bool), PaginationQueryDefinition<T>> Cache = new();
     }
 }

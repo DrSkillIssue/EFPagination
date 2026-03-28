@@ -49,9 +49,11 @@ public static class PaginationQuery
             return existing;
 
         if (DefinitionCache<T>.Cache.Count >= DefinitionCache<T>.MaxSize)
+        {
             throw new InvalidOperationException(
                 $"PaginationQuery definition cache exceeded {DefinitionCache<T>.MaxSize} entries for type '{typeof(T).Name}'. " +
                 "Use PaginationSortRegistry for user-controlled sort fields.");
+        }
 
         return DefinitionCache<T>.Cache.GetOrAdd(key, static k =>
         {

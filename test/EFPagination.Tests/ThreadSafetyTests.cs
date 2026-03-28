@@ -8,17 +8,12 @@ using Xunit;
 namespace EFPagination;
 
 [Collection(SqliteDatabaseCollection.Name)]
-public class ThreadSafetyTests
+public class ThreadSafetyTests(SqliteDatabaseFixture fixture)
 {
     private static readonly int[] s_referenceIds = [10, 30, 50, 70];
     private static readonly PaginationDirection[] s_directions = [PaginationDirection.Forward, PaginationDirection.Backward];
 
-    private readonly SqliteDatabaseFixture _fixture;
-
-    public ThreadSafetyTests(SqliteDatabaseFixture fixture)
-    {
-        _fixture = fixture;
-    }
+    private readonly SqliteDatabaseFixture _fixture = fixture;
 
     [Fact]
     public async Task Paginate_ConcurrentCalls_SameDefinition_ProduceIsolatedQueries()

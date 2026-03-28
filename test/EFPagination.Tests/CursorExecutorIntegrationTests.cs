@@ -24,7 +24,7 @@ public class CursorExecutorIntegrationTests
         var page = await PaginationExecutor.ExecuteFromCursorAsync(
             _dbContext.MainModels, def,
             new ExecutionOptions(PageSize: 10),
-            cursor: ReadOnlySpan<char>.Empty);
+            cursor: []);
 
         page.Items.Should().HaveCount(10);
         page.NextCursor.Should().NotBeNullOrEmpty();
@@ -63,7 +63,7 @@ public class CursorExecutorIntegrationTests
         var firstPage = await PaginationExecutor.ExecuteFromCursorAsync(
             _dbContext.MainModels, def,
             new ExecutionOptions(PageSize: 10),
-            cursor: ReadOnlySpan<char>.Empty);
+            cursor: []);
 
         var secondPage = await PaginationExecutor.ExecuteFromCursorAsync(
             _dbContext.MainModels, def,
@@ -117,7 +117,7 @@ public class CursorExecutorIntegrationTests
         var page = await PaginationExecutor.ExecuteFromCursorAsync(
             _dbContext.MainModels, def,
             new ExecutionOptions(PageSize: 10),
-            cursor: (string)null!);
+            cursor: null!);
 
         page.Items.Should().HaveCount(10);
         page.NextCursor.Should().NotBeNullOrEmpty();
@@ -138,7 +138,7 @@ public class CursorExecutorIntegrationTests
         var page = await PaginationExecutor.ExecuteFromCursorAsync(
             _dbContext.MainModels, def,
             new ExecutionOptions(PageSize: 10, IncludeCount: true),
-            cursor: ReadOnlySpan<char>.Empty);
+            cursor: []);
 
         page.TotalCount.Should().Be(99);
     }

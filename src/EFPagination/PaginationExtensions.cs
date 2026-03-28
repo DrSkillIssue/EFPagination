@@ -472,8 +472,10 @@ public static class PaginationExtensions
             }
 
             if (!found)
+            {
                 throw new ArgumentException(
                     $"No value provided for pagination column '{columnName}'.", nameof(referenceValues));
+            }
         }
 
         return ordered;

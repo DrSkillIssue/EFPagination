@@ -51,7 +51,7 @@ public sealed class NonUniqueTiebreakerAnalyzer : DiagnosticAnalyzer
         if (propertyName is null)
             return;
 
-        if (propertyName.EndsWith("Id", System.StringComparison.Ordinal))
+        if (propertyName.EndsWith("Id", StringComparison.Ordinal))
             return;
 
         if (keyAttribute is not null && HasKeyAttribute(lastBuilderCall, keyAttribute))
@@ -116,7 +116,9 @@ public sealed class NonUniqueTiebreakerAnalyzer : DiagnosticAnalyzer
                 var containingType = method.ContainingType;
                 if (containingType is null ||
                     !SymbolEqualityComparer.Default.Equals(containingType.OriginalDefinition, builderType))
+                {
                     continue;
+                }
 
                 if (outermost is null || IsOuterCall(invocation, outermost))
                     outermost = invocation;

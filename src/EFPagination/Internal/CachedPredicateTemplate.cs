@@ -94,27 +94,18 @@ internal sealed class CachedPredicateTemplate<T>(
     /// its own <see cref="ValueHolder"/> instances and substitutes them into the template,
     /// producing a thread-safe per-call lambda expression.
     /// </summary>
-    internal sealed class TemplateInstance
+    internal sealed class TemplateInstance(
+        Expression templateBody,
+        ParameterExpression entityParam,
+        ParameterExpression[] placeholders,
+        int columnCount)
     {
-        private readonly Expression _templateBody;
-        private readonly ParameterExpression _entityParam;
-        private readonly ParameterExpression[] _placeholders;
-        private readonly int _columnCount;
+        private readonly Expression _templateBody = templateBody;
+        private readonly ParameterExpression _entityParam = entityParam;
+        private readonly ParameterExpression[] _placeholders = placeholders;
+        private readonly int _columnCount = columnCount;
 
-        private readonly SpineReconstructor? _spineReconstructor;
-
-        public TemplateInstance(
-            Expression templateBody,
-            ParameterExpression entityParam,
-            ParameterExpression[] placeholders,
-            int columnCount)
-        {
-            _templateBody = templateBody;
-            _entityParam = entityParam;
-            _placeholders = placeholders;
-            _columnCount = columnCount;
-            _spineReconstructor = SpineReconstructor.TryCreate(templateBody, placeholders);
-        }
+        private readonly SpineReconstructor? _spineReconstructor = SpineReconstructor.TryCreate(templateBody, placeholders);
 
         public Expression<Func<T, bool>> Instantiate(object?[] referenceValues)
         {

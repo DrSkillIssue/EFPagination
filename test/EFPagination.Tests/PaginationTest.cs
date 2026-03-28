@@ -105,7 +105,7 @@ public abstract class PaginationTest
             .ToListAsync();
 
         var result = await DbContext.MainModels.Paginate(
-            PaginationQuery.Build<MainModel>(builder)).Query
+            PaginationQuery.Build(builder)).Query
             .Take(Size)
             .ToListAsync();
 
@@ -145,7 +145,7 @@ public abstract class PaginationTest
             .ToListAsync();
 
         var result = await DbContext.MainModels.Paginate(
-            PaginationQuery.Build<MainModel>(builder),
+            PaginationQuery.Build(builder),
             PaginationDirection.Forward,
             reference).Query
             .IncludeStuff()
@@ -177,7 +177,7 @@ public abstract class PaginationTest
             .ToListAsync();
 
         var result = await DbContext.MainModels.Paginate(
-            PaginationQuery.Build<MainModel>(builder),
+            PaginationQuery.Build(builder),
             PaginationDirection.Forward,
             referenceDto).Query
             .Take(Size)
@@ -202,7 +202,7 @@ public abstract class PaginationTest
             .ToListAsync();
 
         var result = await DbContext.MainModels.Paginate(
-            PaginationQuery.Build<MainModel>(builder),
+            PaginationQuery.Build(builder),
             PaginationDirection.Backward,
             reference).Query
             .IncludeStuff()
@@ -223,7 +223,7 @@ public abstract class PaginationTest
             .FirstAsync();
 
         var result = await DbContext.MainModels.Paginate(
-            PaginationQuery.Build<MainModel>(builder),
+            PaginationQuery.Build(builder),
             PaginationDirection.Backward,
             reference).Query
             .Take(Size)
@@ -239,7 +239,7 @@ public abstract class PaginationTest
         var (offsetOrderer, builder) = GetForQuery(queryType);
 
         var context = DbContext.MainModels.Paginate(
-            PaginationQuery.Build<MainModel>(builder));
+            PaginationQuery.Build(builder));
         var items = await context.Query
             .IncludeStuff()
             .Take(Size)
@@ -263,7 +263,7 @@ public abstract class PaginationTest
             .FirstAsync();
 
         var context = DbContext.MainModels.Paginate(
-            PaginationQuery.Build<MainModel>(builder),
+            PaginationQuery.Build(builder),
             PaginationDirection.Forward,
             reference);
         var items = await context.Query
@@ -402,7 +402,7 @@ public abstract class PaginationTest
         while (true)
         {
             var page = await DbContext.MainModels
-                .Paginate(PaginationQuery.Build<MainModel>(builder), PaginationDirection.Forward, reference).Query
+                .Paginate(PaginationQuery.Build(builder), PaginationDirection.Forward, reference).Query
                 .IncludeStuff()
                 .Take(Size)
                 .ToListAsync();
@@ -420,7 +420,7 @@ public abstract class PaginationTest
     {
         var (_, builder) = GetForQuery(queryType);
 
-        var context = DbContext.MainModels.Paginate(PaginationQuery.Build<MainModel>(builder));
+        var context = DbContext.MainModels.Paginate(PaginationQuery.Build(builder));
         var items = await context.Query.IncludeStuff().Take(Size).ToListAsync();
         context.EnsureCorrectOrder(items);
 
@@ -440,7 +440,7 @@ public abstract class PaginationTest
         var expected = await offsetOrderer(filtered).IncludeStuff().Skip(Size + 1).Take(Size).ToListAsync();
 
         var result = await filtered
-            .Paginate(PaginationQuery.Build<MainModel>(builder), PaginationDirection.Forward, reference).Query
+            .Paginate(PaginationQuery.Build(builder), PaginationDirection.Forward, reference).Query
             .IncludeStuff()
             .Take(Size)
             .ToListAsync();
@@ -460,7 +460,7 @@ public abstract class PaginationTest
             .Take(Size)
             .ToListAsync();
 
-        var context = DbContext.MainModels.Paginate(PaginationQuery.Build<MainModel>(builder), PaginationDirection.Backward);
+        var context = DbContext.MainModels.Paginate(PaginationQuery.Build(builder), PaginationDirection.Backward);
         var result = await context.Query.Take(Size).ToListAsync();
         context.EnsureCorrectOrder(result);
 
@@ -554,7 +554,7 @@ public abstract class PaginationTest
         var reference = await offsetOrderer(DbContext.MainModels).IncludeStuff().Skip(Size).FirstAsync();
 
         var inlineResult = await DbContext.MainModels
-            .Paginate(PaginationQuery.Build<MainModel>(builder), PaginationDirection.Forward, reference).Query
+            .Paginate(PaginationQuery.Build(builder), PaginationDirection.Forward, reference).Query
             .IncludeStuff().Take(Size).ToListAsync();
 
         var prebuiltResult = await DbContext.MainModels
@@ -571,12 +571,12 @@ public abstract class PaginationTest
         var createdValue = (await DbContext.MainModels.OrderBy(x => x.Created).FirstAsync()).Created;
         var reference = new { Created = createdValue };
 
-        var act = () => DbContext.MainModels
+        Task<List<MainModel>> act() => DbContext.MainModels
             .Paginate(definition, PaginationDirection.Forward, reference).Query
             .Take(Size)
             .ToListAsync();
 
-        var ex = await Assert.ThrowsAsync<IncompatibleReferenceException>(act);
+        var ex = await Assert.ThrowsAsync<IncompatibleReferenceException>((Func<Task<List<MainModel>>>)act);
         ex.PropertyName.Should().Be("Id");
     }
 

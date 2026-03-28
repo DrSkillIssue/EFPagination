@@ -202,29 +202,17 @@ internal sealed class SpineReconstructor
         MethodCallCompare,
     }
 
-    private readonly struct Instruction
+    private readonly struct Instruction(Op op, int index = 0, int left = 0, int right = 0,
+        ExpressionType exprType = default, Type? type = null,
+        Expression? staticExpr = null, System.Reflection.MethodInfo? method = null)
     {
-        public readonly Op Op;
-        public readonly int Index;
-        public readonly int Left;
-        public readonly int Right;
-        public readonly ExpressionType ExprType;
-        public readonly Type? Type;
-        public readonly Expression? Static;
-        public readonly System.Reflection.MethodInfo? Method;
-
-        public Instruction(Op op, int index = 0, int left = 0, int right = 0,
-            ExpressionType exprType = default, Type? type = null,
-            Expression? staticExpr = null, System.Reflection.MethodInfo? method = null)
-        {
-            Op = op;
-            Index = index;
-            Left = left;
-            Right = right;
-            ExprType = exprType;
-            Type = type;
-            Static = staticExpr;
-            Method = method;
-        }
+        public readonly Op Op = op;
+        public readonly int Index = index;
+        public readonly int Left = left;
+        public readonly int Right = right;
+        public readonly ExpressionType ExprType = exprType;
+        public readonly Type? Type = type;
+        public readonly Expression? Static = staticExpr;
+        public readonly System.Reflection.MethodInfo? Method = method;
     }
 }

@@ -32,7 +32,9 @@ internal static class KeysetQueryExecutor
             hasCursor = true;
             if (!PaginationCursor.TryDecode(builder.CursorString.AsSpan(), definition,
                     out var values, out _, out var decodedSortBy, out previousTotalCount))
+            {
                 throw new ArgumentException("Invalid or expired cursor.");
+            }
 
             sortBy ??= decodedSortBy;
             context = source.Paginate(definition, direction, values);
@@ -107,7 +109,10 @@ internal static class KeysetQueryExecutor
         {
             if (!PaginationCursor.TryDecode(builder.CursorString.AsSpan(), definition,
                     out var values, out _))
+            {
                 throw new ArgumentException("Invalid or expired cursor.");
+            }
+
             firstContext = source.Paginate(definition, PaginationDirection.Forward, values);
         }
         else if (builder.BoundValues is not null)

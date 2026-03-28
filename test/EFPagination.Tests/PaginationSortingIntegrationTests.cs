@@ -24,12 +24,12 @@ public class PaginationSortingIntegrationTests
         var builderDefinition = PaginationQuery.Build<MainModel>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
 
         var stringResult = await _dbContext.MainModels
-            .PaginateQuery(stringDefinition)
+            .Paginate(stringDefinition).Query
             .Take(10)
             .ToListAsync();
 
         var builderResult = await _dbContext.MainModels
-            .PaginateQuery(builderDefinition)
+            .Paginate(builderDefinition).Query
             .Take(10)
             .ToListAsync();
 
@@ -53,8 +53,8 @@ public class PaginationSortingIntegrationTests
         var createdDesc = registry.Resolve("CrEaTeD".AsSpan(), "DESC".AsSpan());
         var fallback = registry.Resolve("unknown".AsSpan(), "asc".AsSpan());
 
-        var createdDescPage = await _dbContext.MainModels.PaginateQuery(createdDesc).Take(10).ToListAsync();
-        var fallbackPage = await _dbContext.MainModels.PaginateQuery(fallback).Take(10).ToListAsync();
+        var createdDescPage = await _dbContext.MainModels.Paginate(createdDesc).Query.Take(10).ToListAsync();
+        var fallbackPage = await _dbContext.MainModels.Paginate(fallback).Query.Take(10).ToListAsync();
 
         createdDescPage.Select(x => x.Id).Should().BeEquivalentTo(
             await _dbContext.MainModels.OrderByDescending(x => x.Created).ThenBy(x => x.Id).Take(10).Select(x => x.Id).ToListAsync(),
@@ -79,12 +79,12 @@ public class PaginationSortingIntegrationTests
         var definition = registry.Resolve("created".AsSpan(), "desc".AsSpan());
 
         var firstPage = await _dbContext.MainModels
-            .PaginateQuery(definition)
+            .Paginate(definition).Query
             .Take(10)
             .ToListAsync();
 
         var secondPage = await _dbContext.MainModels
-            .PaginateQuery(definition, PaginationDirection.Forward, firstPage[^1])
+            .Paginate(definition, PaginationDirection.Forward, firstPage[^1]).Query
             .Take(10)
             .ToListAsync();
 
@@ -105,7 +105,7 @@ public class PaginationSortingIntegrationTests
         var definition = PaginationQuery.Build<MainModel>("Created", descending: false, tiebreaker: null);
 
         var page = await _dbContext.MainModels
-            .PaginateQuery(definition)
+            .Paginate(definition).Query
             .Take(10)
             .Select(x => x.Id)
             .ToListAsync();

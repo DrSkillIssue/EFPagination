@@ -77,4 +77,23 @@ public sealed class IncompatibleReferenceException : Exception
         ReferenceType = referenceType;
         EntityType = entityType;
     }
+
+    /// <summary>
+    /// Initializes a new instance with a custom message and property details.
+    /// </summary>
+    /// <param name="message">The exception message.</param>
+    /// <param name="propertyName">The name of the property that was not found.</param>
+    /// <param name="referenceType">The type of the reference object that was searched.</param>
+    /// <param name="entityType">The entity type that defines the pagination column.</param>
+    public IncompatibleReferenceException(
+        string message,
+        string propertyName,
+        Type referenceType,
+        Type entityType)
+        : base(message)
+    {
+        PropertyName = propertyName;
+        ReferenceType = referenceType;
+        EntityType = entityType;
+    }
 }

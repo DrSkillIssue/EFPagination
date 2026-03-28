@@ -122,7 +122,7 @@ public class PaginationCursorIntegrationTests
     {
         var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created).Ascending(x => x.Id));
 
-        var firstPage = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, null, includeCount: true);
+        var firstPage = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, new ExecutionOptions(PageSize: 10, IncludeCount: true));
         var lastItem = firstPage.Items[^1];
         var cursor = PaginationCursor.Encode(
         [
@@ -139,7 +139,7 @@ public class PaginationCursorIntegrationTests
         totalCount.Should().Be(firstPage.TotalCount);
 
         var secondPage = await _dbContext.MainModels
-            .PaginateQuery(definition, PaginationDirection.Forward, decoded)
+            .Paginate(definition, PaginationDirection.Forward, decoded).Query
             .Take(10)
             .ToListAsync();
 
@@ -150,7 +150,7 @@ public class PaginationCursorIntegrationTests
     public async Task TryDecode_ReturnsFalse_ForTamperedPaginationCursor()
     {
         var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created).Ascending(x => x.Id));
-        var firstPage = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, null, includeCount: true);
+        var firstPage = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, new ExecutionOptions(PageSize: 10, IncludeCount: true));
         var lastItem = firstPage.Items[^1];
 
         var validCursor = PaginationCursor.Encode(
@@ -168,7 +168,7 @@ public class PaginationCursorIntegrationTests
     public async Task TryDecode_DefinitionOverload_Feeds_Executor_Directly()
     {
         var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created).Ascending(x => x.Id));
-        var firstPage = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, null, includeCount: true);
+        var firstPage = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, new ExecutionOptions(PageSize: 10, IncludeCount: true));
         var lastItem = firstPage.Items[^1];
         var cursor = PaginationCursor.Encode(
         [
@@ -181,10 +181,10 @@ public class PaginationCursorIntegrationTests
         success.Should().BeTrue();
         written.Should().Be(2);
 
-        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, includeCount: false, values);
+        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, new ExecutionOptions(PageSize: 10), values);
 
         page.Items.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(11, 10), options => options.WithStrictOrdering());
-        page.HasMore.Should().BeTrue();
+        page.HasNext.Should().BeTrue();
     }
 
     [Fact]
@@ -198,7 +198,7 @@ public class PaginationCursorIntegrationTests
         success.Should().BeTrue();
         written.Should().Be(2);
 
-        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, 10, includeCount: false, values);
+        var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, new ExecutionOptions(PageSize: 10), values);
 
         page.Items.Should().NotBeEmpty();
     }

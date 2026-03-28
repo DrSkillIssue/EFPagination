@@ -1,82 +1,92 @@
+using System.Runtime.InteropServices;
 using Sample.Data;
-using Microsoft.EntityFrameworkCore;
 using EFPagination;
+using EFPagination.AspNetCore;
 
 namespace Sample.Endpoints;
 
-/// <summary>
-/// Minimal API endpoint demonstrating JSON cursor-based pagination with loose typing.
-/// </summary>
 public static class UsersApi
 {
-    private static readonly PaginationQueryDefinition<User> s_definition =
-        PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
+    private static readonly PaginationQueryDefinition<User> s_defaultDefinition =
+        PaginationQuery.Build<User>(b => b.Ascending(x => x.Id));
+
+    private static readonly PaginationSortRegistry<User> s_sortRegistry = new(
+        s_defaultDefinition,
+        SortField.Create<User>("created", "Created"),
+        SortField.Create<User>("name", "Name"));
 
     public static void MapUsersApi(this WebApplication app)
     {
-        app.MapGet("/api/users", async (
-            AppDbContext db,
-            DateTime? afterCreated,
-            int? afterId,
-            DateTime? beforeCreated,
-            int? beforeId,
-            bool first = false,
-            bool last = false) =>
+        app.MapGet("/api/users", HandleCursorPagination);
+        app.MapGet("/api/users/simple", HandleSimple);
+        app.MapGet("/api/users/stream-count", HandleStreamCount);
+    }
+
+    private static async Task<IResult> HandleCursorPagination(
+        AppDbContext db,
+        string? after = null,
+        string? before = null,
+        int pageSize = 20,
+        string? sortBy = null,
+        string? sortDir = null)
+    {
+        var definition = s_sortRegistry.Resolve(sortBy.AsSpan(), sortDir.AsSpan());
+
+        var builder = db.Users.Keyset(definition).MaxPageSize(100).IncludeCount();
+
+        if (before is not null)
+            builder = builder.Before(before);
+        else if (after is not null)
+            builder = builder.After(after);
+
+        var page = await builder.TakeAsync(pageSize);
+
+        var span = CollectionsMarshal.AsSpan(page.Items);
+        var items = new UserDto[span.Length];
+        for (var i = 0; i < span.Length; i++)
+            items[i] = new UserDto(span[i].Id, span[i].Name, span[i].Created);
+
+        return Results.Ok(new PaginatedResponse<UserDto>(
+            items, page.NextCursor, page.PreviousCursor,
+            page.TotalCount >= 0 ? page.TotalCount : null));
+    }
+
+    private static async Task<IResult> HandleSimple(
+        AppDbContext db,
+        string? after = null,
+        int pageSize = 20)
+    {
+        var builder = db.Users.Keyset(s_defaultDefinition);
+
+        if (after is not null)
+            builder = builder.After(after);
+
+        var page = await builder.TakeAsync(pageSize);
+
+        var span = CollectionsMarshal.AsSpan(page.Items);
+        var items = new UserDto[span.Length];
+        for (var i = 0; i < span.Length; i++)
+            items[i] = new UserDto(span[i].Id, span[i].Name, span[i].Created);
+
+        return Results.Ok(new PaginatedResponse<UserDto>(
+            items, page.NextCursor, page.PreviousCursor, null));
+    }
+
+    private static async Task<IResult> HandleStreamCount(
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var count = 0;
+        var pageCount = 0;
+
+        await foreach (var page in db.Users.Keyset(s_defaultDefinition).StreamAsync(500, ct))
         {
-            const int pageSize = 20;
+            count += page.Count;
+            pageCount++;
+        }
 
-            var query = db.Users.AsQueryable();
-
-            var direction = (last || beforeCreated is not null)
-                ? PaginationDirection.Backward
-                : PaginationDirection.Forward;
-
-            // LOOSE TYPING: Build a reference object from query parameters instead of loading the entity.
-            // The library only needs an object with properties matching the pagination columns.
-            object? reference = null;
-            if (afterCreated is not null && afterId is not null)
-            {
-                reference = new { Created = afterCreated.Value, Id = afterId.Value };
-            }
-            else if (beforeCreated is not null && beforeId is not null)
-            {
-                reference = new { Created = beforeCreated.Value, Id = beforeId.Value };
-            }
-
-            var context = query.Paginate(s_definition, direction, reference);
-
-            var users = await context.Query
-                .Take(pageSize)
-                .Select(u => new UserDto(u.Id, u.Name, u.Created))
-                .ToListAsync();
-
-            // LOOSE TYPING: EnsureCorrectOrder and HasPrevious/HasNext work with DTOs — not just entities.
-            context.EnsureCorrectOrder(users);
-            var hasPrevious = await context.HasPreviousAsync(users);
-            var hasNext = await context.HasNextAsync(users);
-
-            var firstItem = users.Count > 0 ? users[0] : null;
-            var lastItem = users.Count > 0 ? users[^1] : null;
-
-            return Results.Ok(new PagedResponse<UserDto>(
-                Data: users,
-                HasPrevious: hasPrevious,
-                HasNext: hasNext,
-                Cursors: new CursorPair(
-                    Before: firstItem is not null ? new CursorToken(firstItem.Created, firstItem.Id) : null,
-                    After: lastItem is not null ? new CursorToken(lastItem.Created, lastItem.Id) : null)));
-        });
+        return Results.Ok(new { TotalItems = count, Pages = pageCount });
     }
 }
 
-/// <summary>Projected user DTO — demonstrates loose typing with projected results.</summary>
 public sealed record UserDto(int Id, string Name, DateTime Created);
-
-/// <summary>Cursor token containing the pagination column values for a single row.</summary>
-public sealed record CursorToken(DateTime Created, int Id);
-
-/// <summary>Cursor pair for the first and last items in the current page.</summary>
-public sealed record CursorPair(CursorToken? Before, CursorToken? After);
-
-/// <summary>Paged response envelope with cursor-based navigation tokens.</summary>
-public sealed record PagedResponse<T>(IReadOnlyList<T> Data, bool HasPrevious, bool HasNext, CursorPair Cursors);

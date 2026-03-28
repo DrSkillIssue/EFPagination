@@ -6,6 +6,7 @@ namespace Sample.Data;
 /// Sample entity demonstrating pagination with various column types.
 /// </summary>
 [Index(nameof(Created), nameof(Id))]
+[Index(nameof(Name), nameof(Id))]
 public sealed class User
 {
     public int Id { get; init; }

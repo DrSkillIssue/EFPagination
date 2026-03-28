@@ -98,6 +98,12 @@
         "dependencies": {
           "Microsoft.EntityFrameworkCore": "[10.0.3, )"
         }
+      },
+      "efpagination.aspnetcore": {
+        "type": "Project",
+        "dependencies": {
+          "EFPagination": "[1.1.3, )"
+        }
       }
     }
   }

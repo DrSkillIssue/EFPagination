@@ -16,10 +16,10 @@ public sealed class PaginationBuilder<T>
 
     private readonly List<PaginationColumn<T>> _columns = [];
 
-    /// <summary>
-    /// Returns the configured columns as an array. Called once after the builder action completes.
-    /// </summary>
-    internal PaginationColumn<T>[] ColumnsArray => [.. _columns];
+    internal PaginationColumn<T>[] ColumnsArray
+    {
+        get => field ??= [.. _columns];
+    }
 
     /// <summary>
     /// Adds an ascending column to the pagination definition.
@@ -54,6 +54,11 @@ public sealed class PaginationBuilder<T>
         bool isDescending)
     {
         ArgumentNullException.ThrowIfNull(columnExpression);
+
+        var columnType = Nullable.GetUnderlyingType(typeof(TColumn)) ?? typeof(TColumn);
+        if (columnType.IsEnum)
+            PaginationCursor.RegisterEnumType(columnType);
+
         _columns.Add(new PaginationColumn<T, TColumn>(isDescending, columnExpression));
         return this;
     }
@@ -62,6 +67,10 @@ public sealed class PaginationBuilder<T>
     {
         var pi = typeof(T).GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)
             ?? throw new ArgumentException($"Public instance property '{propertyName}' not found on type '{typeof(T).Name}'.", nameof(propertyName));
+
+        var columnType = Nullable.GetUnderlyingType(pi.PropertyType) ?? pi.PropertyType;
+        if (columnType.IsEnum)
+            PaginationCursor.RegisterEnumType(columnType);
 
         var param = Expression.Parameter(typeof(T), "x");
         var property = Expression.Property(param, pi);

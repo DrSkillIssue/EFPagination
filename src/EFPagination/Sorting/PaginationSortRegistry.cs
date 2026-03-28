@@ -7,7 +7,7 @@ namespace EFPagination;
 /// Resolves external sort field and direction values to prebuilt pagination definitions.
 /// </summary>
 /// <typeparam name="T">The entity type handled by the registry.</typeparam>
-public sealed class PaginationSortRegistry<T> where T : class
+public sealed class PaginationSortRegistry<T>
 {
     private readonly FrozenDictionary<string, PaginationQueryDefinition<T>>.AlternateLookup<ReadOnlySpan<char>> _ascLookup;
     private readonly FrozenDictionary<string, PaginationQueryDefinition<T>>.AlternateLookup<ReadOnlySpan<char>> _descLookup;
@@ -57,5 +57,29 @@ public sealed class PaginationSortRegistry<T> where T : class
         var lookup = isDesc ? _descLookup : _ascLookup;
 
         return lookup.TryGetValue(sortBy, out var definition) ? definition : _default;
+    }
+
+    /// <summary>
+    /// Attempts to resolve a pagination definition for the requested sort field and direction.
+    /// </summary>
+    /// <param name="sortBy">The requested logical sort field name.</param>
+    /// <param name="sortDir">The requested direction; <c>desc</c> selects descending.</param>
+    /// <param name="definition">When this method returns <see langword="true"/>, the matched definition.</param>
+    /// <returns><see langword="true"/> if a matching field was found or <paramref name="sortBy"/> was empty (default used); <see langword="false"/> if the field was not found.</returns>
+    public bool TryResolve(
+        ReadOnlySpan<char> sortBy,
+        ReadOnlySpan<char> sortDir,
+        out PaginationQueryDefinition<T> definition)
+    {
+        if (sortBy.IsEmpty)
+        {
+            definition = _default;
+            return true;
+        }
+
+        var isDesc = sortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
+        var lookup = isDesc ? _descLookup : _ascLookup;
+
+        return lookup.TryGetValue(sortBy, out definition!);
     }
 }

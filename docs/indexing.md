@@ -10,7 +10,8 @@ Create a composite index that matches the columns and order of your definition:
 
 ```cs
 // Pagination definition:
-PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
+static readonly PaginationQueryDefinition<User> Definition =
+    PaginationQuery.Build<User>(b => b.Descending(x => x.Created).Ascending(x => x.Id));
 ```
 
 ```cs
@@ -52,7 +53,7 @@ A **deterministic definition** uniquely identifies every row. This is critical f
 b.Ascending(x => x.Created)
 ```
 
-If multiple rows share the same `Created` value, keyset pagination may skip rows when navigating between pages. This is because the `WHERE` clause uses strict inequality — rows with the same cursor value are excluded.
+If multiple rows share the same `Created` value, keyset pagination may skip rows when navigating between pages. This is because the `WHERE` clause uses strict inequality -- rows with the same cursor value are excluded.
 
 ### The Fix
 
@@ -64,7 +65,7 @@ b.Ascending(x => x.Created).Ascending(x => x.Id)
 
 The combination of `Created` + `Id` is deterministic because `Id` is unique. This guarantees **stable pagination**: no rows are skipped or duplicated across pages.
 
-This is especially important for cursor tokens. `PaginationCursor` preserves the exact keyset values from the last row on the page; if the definition is not deterministic, a valid cursor can still skip or duplicate rows because the sort itself is ambiguous.
+This is especially important for cursor tokens. The fluent API's `TakeAsync` preserves the exact keyset values from the page boundary rows in opaque cursor tokens. If the definition is not deterministic, a valid cursor can still skip or duplicate rows because the sort itself is ambiguous.
 
 ### When Is This Not Needed?
 
@@ -81,10 +82,10 @@ b.Ascending(x => x.Id)
 | `Id ASC` | Index on `Id` (usually the PK) |
 | `Created DESC, Id ASC` | Composite index on `(Created DESC, Id ASC)` |
 | `Score DESC, Created DESC, Id ASC` | Composite index on `(Score DESC, Created DESC, Id ASC)` |
-| `Details.Created DESC, Id ASC` | Composite index on `(Details.Created DESC, Id ASC)` — may require a separate table index for owned types |
+| `Details.Created DESC, Id ASC` | Composite index on `(Details.Created DESC, Id ASC)` -- may require a separate table index for owned types |
 
 ## See Also
 
-- [NULL Handling](null-handling.md) — Indexing computed columns for nullable columns
-- [Prebuilt Definitions](prebuilt-definitions.md) — Reducing per-query overhead
-- [API Reference](api-reference.md#paginationcursor) — Cursor encoding and decoding
+- [NULL Handling](null-handling.md) -- Indexing computed columns for nullable columns
+- [Prebuilt Definitions](prebuilt-definitions.md) -- Reducing per-query overhead
+- [Analyzers & Diagnostics](diagnostics.md) -- `KP0002` warns about non-unique tiebreakers

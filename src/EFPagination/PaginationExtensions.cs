@@ -134,64 +134,6 @@ public static class PaginationExtensions
         PaginationDirection direction,
         ColumnValue[] referenceValues) => Paginate(source, queryDefinition, direction, referenceValues.AsSpan());
 
-    /// <summary>
-    /// Paginates using keyset pagination.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="builderAction">An action that takes a builder and registers the columns upon which pagination will work.</param>
-    /// <param name="direction">The direction to take. Default is Forward.</param>
-    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties. Doesn't necessarily need to be the same type as T.</param>
-    /// <returns>An object containing the modified queryable. Can be used with other helper methods related to pagination.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="source"/> is null.
-    /// <paramref name="builderAction"/> is null.
-    /// </exception>
-    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered with the builder.</exception>
-    /// <remarks>
-    /// Note that calling this method will override any OrderBy calls you have done before.
-    /// </remarks>
-    public static PaginationContext<T> Paginate<T>(
-        this IQueryable<T> source,
-        Action<PaginationBuilder<T>> builderAction,
-        PaginationDirection direction = PaginationDirection.Forward,
-        object? reference = null)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(builderAction);
-
-        var columns = PaginationQuery.BuildColumns(builderAction);
-        return source.Paginate(columns, direction, reference);
-    }
-
-    /// <summary>
-    /// Paginates using keyset pagination with an inline builder and strongly-typed reference object.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <typeparam name="TReference">The type of the reference object.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="builderAction">An action that configures the pagination columns.</param>
-    /// <param name="direction">The direction to take.</param>
-    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
-    /// <returns>An object containing the modified queryable.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="builderAction"/>, or <paramref name="reference"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered by the builder.</exception>
-    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
-    public static PaginationContext<T> Paginate<T, TReference>(
-        this IQueryable<T> source,
-        Action<PaginationBuilder<T>> builderAction,
-        PaginationDirection direction,
-        TReference reference)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(builderAction);
-        ArgumentNullException.ThrowIfNull(reference);
-
-        var columns = PaginationQuery.BuildColumns(builderAction);
-        return source.Paginate(columns, direction, reference);
-    }
-
     private static PaginationContext<T> Paginate<T>(
         this IQueryable<T> source,
         PaginationColumn<T>[] columns,
@@ -206,10 +148,12 @@ public static class PaginationExtensions
             throw new InvalidOperationException("There should be at least one configured column in the pagination definition.");
         }
 
+        using var activity = PaginationDiagnostics.StartPaginate(columns, direction, predicateTemplate is not null);
+
         var orderedQuery = ApplyOrdering(source, columns, direction);
         var filteredQuery = reference is null
             ? orderedQuery
-            : orderedQuery.Where(predicateTemplate is not null
+            : QueryableMethods.ApplyWhere(orderedQuery, predicateTemplate is not null
                 ? BuildFilterPredicateExpressionCached(predicateTemplate, columns, direction, reference)
                 : BuildFilterPredicateExpression(columns, direction, reference));
 
@@ -234,7 +178,7 @@ public static class PaginationExtensions
         var orderedQuery = ApplyOrdering(source, columns, direction);
         var filteredQuery = orderedValues.Length == 0
             ? orderedQuery
-            : orderedQuery.Where(predicateTemplate is not null
+            : QueryableMethods.ApplyWhere(orderedQuery, predicateTemplate is not null
                 ? predicateTemplate.Build(direction, orderedValues)
                 : BuildFilterPredicateExpressionFromValues(columns, direction, orderedValues));
 
@@ -257,7 +201,7 @@ public static class PaginationExtensions
         }
 
         var orderedQuery = ApplyOrdering(source, columns, direction);
-        var filteredQuery = orderedQuery.Where(predicateTemplate is not null
+        var filteredQuery = QueryableMethods.ApplyWhere(orderedQuery, predicateTemplate is not null
             ? BuildFilterPredicateExpressionCached(predicateTemplate, columns, direction, reference)
             : BuildFilterPredicateExpression(columns, direction, reference));
 
@@ -283,152 +227,13 @@ public static class PaginationExtensions
         IQueryable<T> filteredQuery = orderedQuery;
         if (!referenceValues.IsEmpty)
         {
-            filteredQuery = orderedQuery.Where(predicateTemplate is not null
+            filteredQuery = QueryableMethods.ApplyWhere(orderedQuery, predicateTemplate is not null
                 ? BuildFilterPredicateExpressionCached(predicateTemplate, columns, direction, referenceValues)
                 : BuildFilterPredicateExpressionFromValues(columns, direction, OrderValuesByColumns(columns, referenceValues)));
         }
 
         return new PaginationContext<T>(filteredQuery, orderedQuery, columns, direction, predicateTemplate);
     }
-
-    /// <summary>
-    /// Paginates using keyset pagination.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
-    /// <param name="direction">The direction to take. Default is Forward.</param>
-    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties. Doesn't necessarily need to be the same type as T.</param>
-    /// <returns>The modified the queryable.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="source"/> is null.
-    /// <paramref name="queryDefinition"/> is null.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
-    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
-    /// <remarks>
-    /// Note that calling this method will override any OrderBy calls you have done before.
-    /// </remarks>
-    public static IQueryable<T> PaginateQuery<T>(
-        this IQueryable<T> source,
-        PaginationQueryDefinition<T> queryDefinition,
-        PaginationDirection direction = PaginationDirection.Forward,
-        object? reference = null) => Paginate(source, queryDefinition, direction, reference).Query;
-
-    /// <summary>
-    /// Paginates using keyset pagination with ordered values bound to the pagination definition and returns the query directly.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
-    /// <param name="direction">The direction to take.</param>
-    /// <param name="referenceValues">The definition-bound ordered values to use as the page boundary.</param>
-    /// <returns>The modified queryable.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="referenceValues"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
-    public static IQueryable<T> PaginateQuery<T>(
-        this IQueryable<T> source,
-        PaginationQueryDefinition<T> queryDefinition,
-        PaginationDirection direction,
-        PaginationValues<T> referenceValues) => Paginate(source, queryDefinition, direction, referenceValues).Query;
-
-    /// <summary>
-    /// Paginates using keyset pagination with a strongly-typed reference object and returns the query directly.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <typeparam name="TReference">The type of the reference object.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
-    /// <param name="direction">The direction to take.</param>
-    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
-    /// <returns>The modified queryable.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="reference"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered with the definition.</exception>
-    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
-    public static IQueryable<T> PaginateQuery<T, TReference>(
-        this IQueryable<T> source,
-        PaginationQueryDefinition<T> queryDefinition,
-        PaginationDirection direction,
-        TReference reference) => Paginate(source, queryDefinition, direction, reference).Query;
-
-    /// <summary>
-    /// Paginates using keyset pagination with direct column values and returns the query directly.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
-    /// <param name="direction">The direction to take.</param>
-    /// <param name="referenceValues">The column values to use as the pagination reference.</param>
-    /// <returns>The modified queryable.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="queryDefinition"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is missing a required column when values are provided out of order.</exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered with the definition, or the direct-value path targets a definition that cannot be addressed by column name.</exception>
-    public static IQueryable<T> PaginateQuery<T>(
-        this IQueryable<T> source,
-        PaginationQueryDefinition<T> queryDefinition,
-        PaginationDirection direction,
-        ReadOnlySpan<ColumnValue> referenceValues) => Paginate(source, queryDefinition, direction, referenceValues).Query;
-
-    /// <summary>
-    /// Paginates using keyset pagination with direct column values from an array, then returns the query directly.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
-    /// <param name="direction">The direction to take.</param>
-    /// <param name="referenceValues">The column values to use as the pagination reference.</param>
-    /// <returns>The modified queryable.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="referenceValues"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is missing a required column when values are provided out of order.</exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered with the definition, or the direct-value path targets a definition that cannot be addressed by column name.</exception>
-    public static IQueryable<T> PaginateQuery<T>(
-        this IQueryable<T> source,
-        PaginationQueryDefinition<T> queryDefinition,
-        PaginationDirection direction,
-        ColumnValue[] referenceValues) => Paginate(source, queryDefinition, direction, referenceValues).Query;
-
-    /// <summary>
-    /// Paginates using keyset pagination.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="builderAction">An action that takes a builder and registers the columns upon which pagination will work.</param>
-    /// <param name="direction">The direction to take. Default is Forward.</param>
-    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties. Doesn't necessarily need to be the same type as T.</param>
-    /// <returns>The modified the queryable.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="source"/> is null.
-    /// <paramref name="builderAction"/> is null.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered by the builder.</exception>
-    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
-    /// <remarks>
-    /// Note that calling this method will override any OrderBy calls you have done before.
-    /// </remarks>
-    public static IQueryable<T> PaginateQuery<T>(
-        this IQueryable<T> source,
-        Action<PaginationBuilder<T>> builderAction,
-        PaginationDirection direction = PaginationDirection.Forward,
-        object? reference = null) => Paginate(source, builderAction, direction, reference).Query;
-
-    /// <summary>
-    /// Paginates using keyset pagination with an inline builder and strongly-typed reference object, then returns the query directly.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity.</typeparam>
-    /// <typeparam name="TReference">The type of the reference object.</typeparam>
-    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
-    /// <param name="builderAction">An action that configures the pagination columns.</param>
-    /// <param name="direction">The direction to take.</param>
-    /// <param name="reference">The reference object. Needs to have properties with exact names matching the configured properties.</param>
-    /// <returns>The modified queryable.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="builderAction"/>, or <paramref name="reference"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException">If no columns were registered by the builder.</exception>
-    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
-    public static IQueryable<T> PaginateQuery<T, TReference>(
-        this IQueryable<T> source,
-        Action<PaginationBuilder<T>> builderAction,
-        PaginationDirection direction,
-        TReference reference) => Paginate(source, builderAction, direction, reference).Query;
 
     /// <summary>
     /// Returns true when there is more data before the list.
@@ -446,7 +251,6 @@ public static class PaginationExtensions
         this PaginationContext<T> context,
         IReadOnlyList<T2> data)
     {
-        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(data);
 
         if (data.Count == 0)
@@ -475,7 +279,6 @@ public static class PaginationExtensions
         this PaginationContext<T> context,
         IReadOnlyList<T2> data)
     {
-        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(data);
 
         if (data.Count == 0)
@@ -518,7 +321,6 @@ public static class PaginationExtensions
         this PaginationContext<T> context,
         IList<T2> data)
     {
-        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(data);
 
         if (context.Direction == PaginationDirection.Backward)
@@ -535,6 +337,70 @@ public static class PaginationExtensions
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Returns a read-only view of items in correct order. When direction is
+    /// <see cref="PaginationDirection.Forward"/>, returns the input directly with zero allocation.
+    /// When <see cref="PaginationDirection.Backward"/>, returns a reverse-indexed wrapper
+    /// over the original data — no copying, no new list.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="T2">The element type.</typeparam>
+    /// <param name="context">The pagination context.</param>
+    /// <param name="data">The read-only data list.</param>
+    /// <returns>An <see cref="IReadOnlyList{T}"/> presenting items in correct order.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
+    public static IReadOnlyList<T2> ToCorrectOrder<T, T2>(
+        this PaginationContext<T> context,
+        IReadOnlyList<T2> data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        if (context.Direction != PaginationDirection.Backward)
+            return data;
+
+        return new ReversedReadOnlyList<T2>(data);
+    }
+
+    /// <summary>
+    /// Materializes a paginated query, computing <c>HasPrevious</c> and <c>HasNext</c> without
+    /// extra SQL roundtrips by leveraging the <c>pageSize + 1</c> overflow pattern and
+    /// direction-aware inference.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="context">The pagination context returned by a <c>Paginate</c> call.</param>
+    /// <param name="pageSize">The maximum number of items to return.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A materialized page with items in correct order and navigation flags.</returns>
+    public static async Task<KeysetPage<T>> MaterializeAsync<T>(
+        this PaginationContext<T> context,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
+
+        var items = await context.Query
+            .Take(pageSize + 1)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        var hasMore = items.Count > pageSize;
+        if (hasMore)
+            items.RemoveAt(items.Count - 1);
+
+        if (context.Direction == PaginationDirection.Backward)
+            CollectionsMarshal.AsSpan(items).Reverse();
+
+        var isFiltered = !ReferenceEquals(context.Query, context.OrderedQuery);
+        var hasPrevious = context.Direction == PaginationDirection.Forward
+            ? isFiltered
+            : hasMore;
+        var hasNext = context.Direction == PaginationDirection.Forward
+            ? hasMore
+            : isFiltered;
+
+        return new KeysetPage<T>(items, hasPrevious, hasNext);
     }
 
     private static Expression<Func<T, bool>> BuildFilterPredicateExpression<T>(
@@ -564,7 +430,7 @@ public static class PaginationExtensions
         var param = Expression.Parameter(typeof(T), "entity");
         var finalExpression = FilterPredicateStrategy.Default.BuildExpressionCoreInternal(
             columns, direction, referenceValueBodies, param);
-        return Expression.Lambda<Func<T, bool>>(finalExpression, param);
+        return FastLambda<T>.Create(finalExpression, param);
     }
 
     private static object?[] OrderValuesByColumns<T>(
@@ -629,7 +495,7 @@ public static class PaginationExtensions
         var param = Expression.Parameter(typeof(T), "entity");
         var finalExpression = FilterPredicateStrategy.Default.BuildExpressionCoreInternal(
             columns, direction, referenceValueBodies, param);
-        return Expression.Lambda<Func<T, bool>>(finalExpression, param);
+        return FastLambda<T>.Create(finalExpression, param);
     }
 
     private static Expression<Func<T, bool>> BuildFilterPredicateExpressionCached<T, TReference>(

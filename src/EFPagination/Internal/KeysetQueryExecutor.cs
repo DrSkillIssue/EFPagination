@@ -55,7 +55,7 @@ internal static class KeysetQueryExecutor
         int? TotalCount,
         bool HasInitialReference) where T : class;
 
-    private static ResolvedContext<T> ResolveContext<T>(
+    internal static ResolvedContext<T> ResolveContext<T>(
         in KeysetQueryBuilder<T> builder,
         PaginationDirection direction) where T : class
     {

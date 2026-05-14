@@ -83,10 +83,13 @@ Internal/
  CursorPair.cs
  FastLambda.cs
  FilterPredicateStrategy.cs
+ KeysetProjectionExecutor.cs
  KeysetQueryExecutor.cs
  PageMaterializer.cs
  PaginationColumn.cs
  PaginationDiagnostics.cs
+ ProjectionEnvelope.cs
+ ProjectionShape.cs
  QueryableMethods.cs
  ReversedReadOnlyList.cs
  SpineReconstructor.cs

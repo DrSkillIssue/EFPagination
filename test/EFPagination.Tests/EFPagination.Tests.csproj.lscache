@@ -72,6 +72,7 @@ PaginationExecutorIntegrationTests.cs
 PaginationSortingIntegrationTests.cs
 PaginationTest.cs
 SchemaFingerprintTests.cs
+ServerSideProjectionIntegrationTests.cs
 StreamingPaginationIntegrationTests.cs
 TestModels/
  AllPrimitivesModel.cs

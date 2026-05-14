@@ -4,20 +4,40 @@ using System.Text;
 
 namespace EFPagination.Cursor;
 
+/// <summary>
+/// A little-endian read-only adapter over a byte span carrying a cursor payload. Provides typed
+/// primitives matching <see cref="CursorWriter"/>. On any out-of-range read, <see cref="Failed"/>
+/// is latched <see langword="true"/> and subsequent reads return default values, so the caller
+/// can check <see cref="Failed"/> once at the end instead of after every read.
+/// </summary>
 [SkipLocalsInit]
 internal ref struct CursorReader
 {
     private readonly ReadOnlySpan<byte> _buffer;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether any read in this session has failed due to
+    /// insufficient remaining bytes.
+    /// </summary>
     public bool Failed { get; set; }
 
+    /// <summary>
+    /// Gets the current read offset within the buffer.
+    /// </summary>
     public int Position { readonly get; private set; }
 
+    /// <summary>
+    /// Initializes a reader over the supplied span.
+    /// </summary>
+    /// <param name="buffer">The cursor payload bytes.</param>
     public CursorReader(ReadOnlySpan<byte> buffer)
     {
         _buffer = buffer;
     }
 
+    /// <summary>
+    /// Gets the number of bytes remaining past <see cref="Position"/>.
+    /// </summary>
     public readonly int Remaining => _buffer.Length - Position;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

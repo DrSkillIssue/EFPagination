@@ -3,8 +3,28 @@ using System.Runtime.CompilerServices;
 
 namespace EFPagination.Internal;
 
+/// <summary>
+/// Backs the server-side projection overloads of
+/// <see cref="KeysetQueryBuilder{T}.TakeAsync{TOut}(int, Expression{Func{T, TOut}}, CancellationToken)"/>
+/// and <see cref="KeysetQueryBuilder{T}.StreamAsync{TOut}(int, Expression{Func{T, TOut}}, CancellationToken)"/>.
+/// Wraps the user's projection in an arity-specialized envelope so EF Core emits a single
+/// <c>SELECT</c> covering the projected columns and the keyset key columns simultaneously.
+/// </summary>
 internal static class KeysetProjectionExecutor
 {
+    /// <summary>
+    /// Executes the builder with a server-side projection as a one-shot paginated query.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="TOut">The projected DTO type.</typeparam>
+    /// <param name="builder">The accumulated builder state.</param>
+    /// <param name="selector">The server-translatable projection.</param>
+    /// <param name="pageSize">The requested page size.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A <see cref="CursorPage{TOut}"/> with projected items and cursor tokens.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="selector"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is zero or negative.</exception>
+    /// <exception cref="NotSupportedException">The pagination definition has fewer than 1 or more than 8 key columns.</exception>
     public static async Task<CursorPage<TOut>> ExecuteAsync<T, TOut>(
         KeysetQueryBuilder<T> builder,
         Expression<Func<T, TOut>> selector,
@@ -34,6 +54,20 @@ internal static class KeysetProjectionExecutor
         return new CursorPage<TOut>(page.ToItemList(), next, previous, totalCount);
     }
 
+    /// <summary>
+    /// Executes the builder with a server-side projection as a streaming forward enumeration of pages.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="TOut">The projected DTO type.</typeparam>
+    /// <param name="builder">The accumulated builder state.</param>
+    /// <param name="selector">The server-translatable projection.</param>
+    /// <param name="pageSize">The requested page size per batch.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>An async enumerable yielding one projected page per iteration.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="selector"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is zero or negative.</exception>
+    /// <exception cref="InvalidOperationException">The builder is configured for backward pagination.</exception>
+    /// <exception cref="NotSupportedException">The pagination definition has fewer than 1 or more than 8 key columns.</exception>
     public static async IAsyncEnumerable<List<TOut>> StreamAsync<T, TOut>(
         KeysetQueryBuilder<T> builder,
         Expression<Func<T, TOut>> selector,

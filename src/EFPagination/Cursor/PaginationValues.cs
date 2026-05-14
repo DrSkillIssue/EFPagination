@@ -15,16 +15,26 @@ public readonly record struct PaginationValues<T>
 
     internal ColumnBinding[]? Bindings { get; init; }
 
-    /// <summary>Gets the number of ordered boundary values stored in this instance.</summary>
+    /// <summary>
+    /// Gets the number of ordered boundary values stored in this instance.
+    /// </summary>
+    /// <value>The number of definition-ordered boundary values, or <c>0</c> when empty.</value>
     public int Count => Bindings?.Length ?? 0;
 
-    /// <summary>Indicates whether this instance has no bound values.</summary>
+    /// <summary>
+    /// Gets a value indicating whether this instance has no bound values.
+    /// </summary>
+    /// <value><see langword="true"/> when no boundary values are stored; otherwise <see langword="false"/>.</value>
     public bool IsEmpty => Bindings is null || Bindings.Length == 0;
 
     /// <summary>
-    /// Creates a new <see cref="PaginationValues{T}"/> from the specified ordered values, against
-    /// the supplied definition. Values must be provided in column order.
+    /// Creates a new <see cref="PaginationValues{T}"/> from the specified ordered values against
+    /// the supplied definition. Values must be provided in column order and will be coerced to
+    /// each column's CLR type.
     /// </summary>
+    /// <param name="definition">The pagination query definition that determines column types and count.</param>
+    /// <param name="values">The ordered boundary values. Must match the definition's column count.</param>
+    /// <returns>A new <see cref="PaginationValues{T}"/> with the supplied values bound.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="definition"/> or <paramref name="values"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="values"/> length does not match the definition column count.</exception>
 #pragma warning disable CA1000

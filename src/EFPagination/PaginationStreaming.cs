@@ -12,7 +12,16 @@ public static class PaginationStreaming
 {
     /// <summary>
     /// Yields successive pages by automatically advancing the keyset cursor through all matching rows.
+    /// Each iteration of the returned <see cref="IAsyncEnumerable{T}"/> materializes one page.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="query">The base <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="definition">The prebuilt pagination query definition.</param>
+    /// <param name="pageSize">The maximum number of items per page.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>
+    /// An <see cref="IAsyncEnumerable{T}"/> that yields one <see cref="List{T}"/> per page until all rows are consumed.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="query"/> or <paramref name="definition"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is zero or negative.</exception>
     public static IAsyncEnumerable<List<T>> PaginateAllAsync<T>(

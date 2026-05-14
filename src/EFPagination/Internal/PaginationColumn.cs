@@ -66,41 +66,63 @@ internal abstract class PaginationColumn<T>(
 
     /// <summary>
     /// Writes this column's value to the cursor by extracting it from <paramref name="reference"/>
-    /// via the cached typed accessor. Returns <see langword="false"/> when the extracted value is
-    /// <see langword="null"/> so the caller can record the null bit in a bitmap.
+    /// via the cached typed accessor.
     /// </summary>
+    /// <param name="reference">The entity or reference object supplying the value.</param>
+    /// <param name="writer">The cursor writer to append the encoded bytes to.</param>
+    /// <returns>
+    /// <see langword="false"/> when the extracted value is <see langword="null"/> (caller should
+    /// record the null bit in the bitmap); otherwise <see langword="true"/>.
+    /// </returns>
     public abstract bool TryWriteCursorValueFromReference(object reference, ref CursorWriter writer);
 
     /// <summary>
-    /// Writes a binding's typed value to the cursor without boxing. Returns
-    /// <see langword="false"/> when the binding holds a <see langword="null"/> reference / default
-    /// nullable, so the caller can record the null bit.
+    /// Writes a binding's typed value to the cursor without boxing.
     /// </summary>
+    /// <param name="binding">The typed binding holding the value.</param>
+    /// <param name="writer">The cursor writer to append the encoded bytes to.</param>
+    /// <returns>
+    /// <see langword="false"/> when the binding holds <see langword="null"/> (caller should record
+    /// the null bit in the bitmap); otherwise <see langword="true"/>.
+    /// </returns>
     public abstract bool TryWriteCursorValueFromBinding(ColumnBinding binding, ref CursorWriter writer);
 
     /// <summary>
     /// Allocates a fresh typed <see cref="ColumnBinding"/> for this column.
     /// </summary>
+    /// <returns>A new <see cref="ColumnBinding"/> instance typed to this column's CLR type.</returns>
     public abstract ColumnBinding CreateBinding();
 
     /// <summary>
     /// Reads this column's typed value from the cursor and stores it in <paramref name="binding"/>
     /// without intermediate boxing.
     /// </summary>
+    /// <param name="reader">The cursor reader positioned at this column's value.</param>
+    /// <param name="binding">The destination binding to receive the decoded value.</param>
     public abstract void DecodeCursorValueInto(ref CursorReader reader, ColumnBinding binding);
 
     /// <summary>
     /// Writes <paramref name="binding"/>'s value from a boxed value. Used when the source value
-    /// arrived already boxed (e.g. <see cref="ColumnValue.Value"/> or the legacy object[] shape).
+    /// arrived already boxed (such as via <see cref="ColumnValue.Value"/>).
     /// </summary>
+    /// <param name="boxed">The boxed source value, or <see langword="null"/>.</param>
+    /// <param name="binding">The destination binding to receive the value.</param>
+    /// <exception cref="InvalidOperationException"><paramref name="boxed"/> is <see langword="null"/> for a non-nullable column type.</exception>
     public abstract void WriteBindingFromBoxed(object? boxed, ColumnBinding binding);
 
     /// <summary>
     /// Extracts this column's value from <paramref name="reference"/> and stores it in
     /// <paramref name="binding"/> typed, without boxing.
     /// </summary>
+    /// <param name="reference">The entity or reference object supplying the value.</param>
+    /// <param name="binding">The destination binding to receive the value.</param>
     public abstract void WriteBindingFromReference(object reference, ColumnBinding binding);
 
+    /// <summary>
+    /// Returns <see cref="PropertyName"/> for column-name-addressable columns.
+    /// </summary>
+    /// <returns>The resolved property path.</returns>
+    /// <exception cref="InvalidOperationException">This column is not addressable by name (computed or non-member expression).</exception>
     public string GetRequiredPropertyNameForColumnValues()
     {
         return PropertyName ?? throw new InvalidOperationException(

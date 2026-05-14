@@ -25,10 +25,24 @@ internal static class FilterPredicateStrategy
         { typeof(bool), GetCompareToMethod(typeof(bool)) },
     }.ToFrozenDictionary();
 
-    /// <summary>Creates a <see cref="CachedPredicateTemplate{T}"/> for the specified columns.</summary>
+    /// <summary>
+    /// Creates a <see cref="CachedPredicateTemplate{T}"/> for the specified columns.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="columns">The ordered pagination columns.</param>
+    /// <returns>A reusable predicate template.</returns>
     public static CachedPredicateTemplate<T> CreateTemplate<T>(PaginationColumn<T>[] columns) => new(columns);
 
-    /// <summary>Builds the predicate body using typed expressions for reference values.</summary>
+    /// <summary>
+    /// Builds the keyset predicate body — a disjunction of conjunctions over the columns —
+    /// using typed expressions for the reference values.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="columns">The ordered pagination columns.</param>
+    /// <param name="direction">The pagination direction.</param>
+    /// <param name="referenceValueExpressions">An expression per column that reads the boundary value (typically a typed field access).</param>
+    /// <param name="param">The entity parameter for the predicate lambda.</param>
+    /// <returns>The predicate body expression (not yet wrapped in a lambda).</returns>
     public static Expression BuildExpressionCore<T>(
         PaginationColumn<T>[] columns,
         PaginationDirection direction,

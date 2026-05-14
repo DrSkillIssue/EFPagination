@@ -6,6 +6,10 @@ namespace EFPagination;
 /// <summary>
 /// Controls how <see cref="PaginationExecutor"/> materializes a page.
 /// </summary>
+/// <param name="PageSize">The requested number of items per page.</param>
+/// <param name="Direction">The pagination direction. Defaults to <see cref="PaginationDirection.Forward"/>.</param>
+/// <param name="IncludeCount">When <see langword="true"/>, a total row count is computed via an additional query. Defaults to <see langword="false"/>.</param>
+/// <param name="MaxPageSize">The upper bound that clamps <paramref name="PageSize"/>. Defaults to <c>500</c>.</param>
 public readonly record struct ExecutionOptions(
     int PageSize,
     PaginationDirection Direction = PaginationDirection.Forward,
@@ -20,7 +24,18 @@ public readonly record struct ExecutionOptions(
 /// </summary>
 public static class PaginationExecutor
 {
-    /// <summary>Executes a page query using definition-bound ordered values.</summary>
+    /// <summary>
+    /// Executes a page query using definition-bound ordered values.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="query">The base <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="definition">The prebuilt pagination query definition.</param>
+    /// <param name="options">Options controlling page size, direction, and optional total count.</param>
+    /// <param name="referenceValues">The definition-bound ordered values to use as the page boundary.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A task that resolves to a <see cref="KeysetPage{T}"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> or <paramref name="definition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="ExecutionOptions.PageSize"/> is zero or negative.</exception>
     public static Task<KeysetPage<T>> ExecuteAsync<T>(
         IQueryable<T> query,
         PaginationQueryDefinition<T> definition,
@@ -29,7 +44,19 @@ public static class PaginationExecutor
         CancellationToken ct = default) where T : class
         => ExecuteCoreAsync(query, options, query.Paginate(definition, options.Direction, referenceValues), ct);
 
-    /// <summary>Executes a page query using manual name/value pairs.</summary>
+    /// <summary>
+    /// Executes a page query using manual column name/value pairs.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="query">The base <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="definition">The prebuilt pagination query definition.</param>
+    /// <param name="options">Options controlling page size, direction, and optional total count.</param>
+    /// <param name="referenceValues">The column name/value pairs to use as the page boundary.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A task that resolves to a <see cref="KeysetPage{T}"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> or <paramref name="definition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="ExecutionOptions.PageSize"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is missing a required column.</exception>
     public static Task<KeysetPage<T>> ExecuteAsync<T>(
         IQueryable<T> query,
         PaginationQueryDefinition<T> definition,
@@ -38,7 +65,19 @@ public static class PaginationExecutor
         CancellationToken ct = default) where T : class
         => ExecuteCoreAsync(query, options, query.Paginate(definition, options.Direction, referenceValues), ct);
 
-    /// <summary>Executes a page query using a reference object whose properties match the pagination definition.</summary>
+    /// <summary>
+    /// Executes a page query using a reference object whose properties match the pagination definition.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="query">The base <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="definition">The prebuilt pagination query definition.</param>
+    /// <param name="options">Options controlling page size, direction, and optional total count.</param>
+    /// <param name="reference">The reference object, or <see langword="null"/> for the first page.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A task that resolves to a <see cref="KeysetPage{T}"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> or <paramref name="definition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="ExecutionOptions.PageSize"/> is zero or negative.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a required property.</exception>
     public static Task<KeysetPage<T>> ExecuteAsync<T>(
         IQueryable<T> query,
         PaginationQueryDefinition<T> definition,
@@ -47,7 +86,18 @@ public static class PaginationExecutor
         CancellationToken ct = default) where T : class
         => ExecuteCoreAsync(query, options, query.Paginate(definition, options.Direction, reference), ct);
 
-    /// <summary>Decodes an opaque cursor, executes the paginated query, and encodes next/previous cursors.</summary>
+    /// <summary>
+    /// Decodes an opaque cursor, executes the paginated query, and encodes next/previous cursors.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="query">The base <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="definition">The prebuilt pagination query definition.</param>
+    /// <param name="options">Options controlling page size, direction, and optional total count.</param>
+    /// <param name="cursor">The opaque cursor token, or an empty span for the first page.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A task that resolves to a <see cref="CursorPage{T}"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> or <paramref name="definition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="ExecutionOptions.PageSize"/> is zero or negative.</exception>
     /// <exception cref="ArgumentException"><paramref name="cursor"/> is invalid or expired.</exception>
     public static Task<CursorPage<T>> ExecuteFromCursorAsync<T>(
         IQueryable<T> query,
@@ -82,7 +132,19 @@ public static class PaginationExecutor
         return ExecuteFromCursorCoreAsync(query, definition, options, context, hasCursor, sortBy, previousTotalCount, ct);
     }
 
-    /// <summary>String overload of <see cref="ExecuteFromCursorAsync{T}(IQueryable{T}, PaginationQueryDefinition{T}, ExecutionOptions, ReadOnlySpan{char}, CancellationToken)"/>.</summary>
+    /// <summary>
+    /// Decodes an opaque cursor string, executes the paginated query, and encodes next/previous cursors.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="query">The base <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="definition">The prebuilt pagination query definition.</param>
+    /// <param name="options">Options controlling page size, direction, and optional total count.</param>
+    /// <param name="cursor">The opaque cursor string, or <see langword="null"/> for the first page.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A task that resolves to a <see cref="CursorPage{T}"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> or <paramref name="definition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="ExecutionOptions.PageSize"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentException"><paramref name="cursor"/> is invalid or expired.</exception>
     public static Task<CursorPage<T>> ExecuteFromCursorAsync<T>(
         IQueryable<T> query,
         PaginationQueryDefinition<T> definition,

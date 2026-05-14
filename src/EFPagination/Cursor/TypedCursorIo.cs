@@ -3,12 +3,19 @@ using System.Runtime.CompilerServices;
 namespace EFPagination.Cursor;
 
 /// <summary>
-/// Direct typeof-chain dispatch for primitive cursor read/write. Each branch is JIT-folded
-/// per closed generic — only the matching arm survives in the specialized code.
+/// Direct <c>typeof(T) ==</c> chain dispatch for primitive cursor read/write. Each branch is
+/// JIT-folded per closed generic, so only the matching arm survives in the specialized code.
 /// Enum types are routed via <see cref="EnumIo{TColumn}"/> from the call site.
 /// </summary>
 internal static class TypedCursorIo
 {
+    /// <summary>
+    /// Writes a typed primitive value to <paramref name="writer"/>.
+    /// </summary>
+    /// <typeparam name="T">The CLR type to encode (must be one of the supported primitives or its nullable equivalent).</typeparam>
+    /// <param name="writer">The cursor writer.</param>
+    /// <param name="value">The value to encode.</param>
+    /// <exception cref="NotSupportedException"><typeparamref name="T"/> is not a supported primitive type.</exception>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Write<T>(ref CursorWriter writer, T value)
     {
@@ -58,6 +65,13 @@ internal static class TypedCursorIo
         ThrowUnsupported<T>();
     }
 
+    /// <summary>
+    /// Reads a typed primitive value from <paramref name="reader"/>.
+    /// </summary>
+    /// <typeparam name="T">The CLR type to decode (must be one of the supported primitives or its nullable equivalent).</typeparam>
+    /// <param name="reader">The cursor reader.</param>
+    /// <returns>The decoded value.</returns>
+    /// <exception cref="NotSupportedException"><typeparamref name="T"/> is not a supported primitive type.</exception>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T Read<T>(ref CursorReader reader)
     {

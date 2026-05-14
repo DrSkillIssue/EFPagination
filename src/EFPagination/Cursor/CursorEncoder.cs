@@ -5,14 +5,36 @@ using EFPagination.Internal;
 
 namespace EFPagination.Cursor;
 
+/// <summary>
+/// Builds Base64Url-encoded cursor tokens by streaming the binary payload through a
+/// <see cref="CursorWriter"/> and optionally appending an HMAC trailer. The two public entry
+/// points cover the two value sources used by <see cref="PaginationCursor"/>: a reference object
+/// or a pre-extracted bindings array.
+/// </summary>
 internal static class CursorEncoder
 {
+    /// <summary>
+    /// Encodes a cursor by reading column values directly from <paramref name="reference"/>.
+    /// </summary>
+    /// <typeparam name="T">The entity type associated with <paramref name="definition"/>.</typeparam>
+    /// <param name="definition">The pagination definition.</param>
+    /// <param name="reference">The entity (or DTO with matching property names) supplying the values.</param>
+    /// <param name="options">Optional cursor metadata.</param>
+    /// <returns>A Base64Url-encoded cursor token.</returns>
     public static string EncodeSchemaBound<T>(
         PaginationQueryDefinition<T> definition,
         T reference,
         PaginationCursorOptions options) where T : notnull
         => EncodeCore(options, new FromReferenceBody<T>(definition, reference, options));
 
+    /// <summary>
+    /// Encodes a cursor from a pre-extracted bindings array.
+    /// </summary>
+    /// <typeparam name="T">The entity type associated with <paramref name="definition"/>.</typeparam>
+    /// <param name="definition">The pagination definition.</param>
+    /// <param name="bindings">The typed boundary bindings, one per column.</param>
+    /// <param name="options">Optional cursor metadata.</param>
+    /// <returns>A Base64Url-encoded cursor token.</returns>
     public static string EncodeSchemaBoundFromBindings<T>(
         PaginationQueryDefinition<T> definition,
         ColumnBinding[] bindings,

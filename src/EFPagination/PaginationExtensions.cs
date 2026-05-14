@@ -40,6 +40,14 @@ public static class PaginationExtensions
     /// <summary>
     /// Paginates using keyset pagination with ordered values bound to the pagination definition.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The definition-bound ordered values to use as the page boundary.</param>
+    /// <returns>A <see cref="PaginationContext{T}"/> containing the ordered, optionally filtered query.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="queryDefinition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">No columns were registered with the definition.</exception>
     public static PaginationContext<T> Paginate<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -55,6 +63,16 @@ public static class PaginationExtensions
     /// <summary>
     /// Paginates using keyset pagination with a strongly-typed reference object.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="TReference">The type of the reference object.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="reference">The reference object. Must expose properties with exact names matching the configured columns.</param>
+    /// <returns>A <see cref="PaginationContext{T}"/> containing the ordered, filtered query.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/>, <paramref name="queryDefinition"/>, or <paramref name="reference"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">No columns were registered with the definition.</exception>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
     public static PaginationContext<T> Paginate<T, TReference>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -70,8 +88,19 @@ public static class PaginationExtensions
     }
 
     /// <summary>
-    /// Paginates using keyset pagination with direct column values.
+    /// Paginates using keyset pagination with direct column name/value pairs.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The column values to use as the pagination reference.</param>
+    /// <returns>A <see cref="PaginationContext{T}"/> containing the ordered, optionally filtered query.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="queryDefinition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is missing a required column.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// No columns were registered with the definition, or the direct-value path targets a definition column that cannot be addressed by name (computed/composite columns).
+    /// </exception>
     public static PaginationContext<T> Paginate<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -88,8 +117,15 @@ public static class PaginationExtensions
     }
 
     /// <summary>
-    /// Paginates using keyset pagination with direct column values.
+    /// Array overload of
+    /// <see cref="Paginate{T}(IQueryable{T}, PaginationQueryDefinition{T}, PaginationDirection, ReadOnlySpan{ColumnValue})"/>.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="source">An <see cref="IQueryable{T}"/> to paginate.</param>
+    /// <param name="queryDefinition">The prebuilt pagination query definition.</param>
+    /// <param name="direction">The direction to take.</param>
+    /// <param name="referenceValues">The column values to use as the pagination reference.</param>
+    /// <returns>A <see cref="PaginationContext{T}"/> containing the ordered, optionally filtered query.</returns>
     public static PaginationContext<T> Paginate<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -121,8 +157,16 @@ public static class PaginationExtensions
     }
 
     /// <summary>
-    /// Returns true when there is more data before the list.
+    /// Determines whether more data exists before <paramref name="data"/> by issuing a single
+    /// <c>EXISTS</c>-style query against the context's ordered query.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="T2">The element type of <paramref name="data"/>.</typeparam>
+    /// <param name="context">The <see cref="PaginationContext{T}"/> returned by a <see cref="Paginate{T}(IQueryable{T}, PaginationQueryDefinition{T}, PaginationDirection, object?)"/> call.</param>
+    /// <param name="data">The materialized page in correct order.</param>
+    /// <returns>A task that resolves to <see langword="true"/> when more data exists before the supplied page.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
+    /// <exception cref="IncompatibleReferenceException">The first element of <paramref name="data"/> is missing a property required by the pagination definition.</exception>
     public static Task<bool> HasPreviousAsync<T, T2>(
         this PaginationContext<T> context,
         IReadOnlyList<T2> data)
@@ -133,8 +177,16 @@ public static class PaginationExtensions
     }
 
     /// <summary>
-    /// Returns true when there is more data after the list.
+    /// Determines whether more data exists after <paramref name="data"/> by issuing a single
+    /// <c>EXISTS</c>-style query against the context's ordered query.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="T2">The element type of <paramref name="data"/>.</typeparam>
+    /// <param name="context">The <see cref="PaginationContext{T}"/> returned by a <see cref="Paginate{T}(IQueryable{T}, PaginationQueryDefinition{T}, PaginationDirection, object?)"/> call.</param>
+    /// <param name="data">The materialized page in correct order.</param>
+    /// <returns>A task that resolves to <see langword="true"/> when more data exists after the supplied page.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
+    /// <exception cref="IncompatibleReferenceException">The last element of <paramref name="data"/> is missing a property required by the pagination definition.</exception>
     public static Task<bool> HasNextAsync<T, T2>(
         this PaginationContext<T> context,
         IReadOnlyList<T2> data)
@@ -157,9 +209,15 @@ public static class PaginationExtensions
     }
 
     /// <summary>
-    /// Ensures the data list is correctly ordered. Reverses in-place when the pagination
-    /// direction was <see cref="PaginationDirection.Backward"/>.
+    /// Ensures the data list is in correct presentation order. Reverses <paramref name="data"/>
+    /// in-place when the context direction is <see cref="PaginationDirection.Backward"/>;
+    /// otherwise no-op.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="T2">The element type of <paramref name="data"/>.</typeparam>
+    /// <param name="context">The <see cref="PaginationContext{T}"/> whose direction informs the reversal.</param>
+    /// <param name="data">The materialized page to reverse in-place when needed.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
     public static void EnsureCorrectOrder<T, T2>(
         this PaginationContext<T> context,
         IList<T2> data)
@@ -180,9 +238,17 @@ public static class PaginationExtensions
     }
 
     /// <summary>
-    /// Returns a read-only view of items in correct order. Reverse-indexed wrapper when
-    /// direction is <see cref="PaginationDirection.Backward"/> — zero copy.
+    /// Returns a read-only view of items in correct presentation order. When the context
+    /// direction is <see cref="PaginationDirection.Forward"/>, returns <paramref name="data"/>
+    /// directly with zero allocation; for <see cref="PaginationDirection.Backward"/>, returns a
+    /// reverse-indexed wrapper over the original list without copying.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="T2">The element type of <paramref name="data"/>.</typeparam>
+    /// <param name="context">The <see cref="PaginationContext{T}"/> whose direction informs the view.</param>
+    /// <param name="data">The read-only data list.</param>
+    /// <returns>An <see cref="IReadOnlyList{T}"/> presenting items in correct presentation order.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> is <see langword="null"/>.</exception>
     public static IReadOnlyList<T2> ToCorrectOrder<T, T2>(
         this PaginationContext<T> context,
         IReadOnlyList<T2> data)
@@ -194,9 +260,16 @@ public static class PaginationExtensions
     }
 
     /// <summary>
-    /// Materializes a paginated query, computing <c>HasPrevious</c> and <c>HasNext</c> via the
-    /// pageSize+1 overflow pattern.
+    /// Materializes a paginated query, computing <see cref="KeysetPage{T}.HasPrevious"/> and
+    /// <see cref="KeysetPage{T}.HasNext"/> without extra SQL round trips by leveraging the
+    /// <c>pageSize + 1</c> overflow pattern and direction-aware inference.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="context">The pagination context returned by a <c>Paginate</c> call.</param>
+    /// <param name="pageSize">The maximum number of items to return.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A materialized <see cref="KeysetPage{T}"/> in correct order with navigation flags populated.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is zero or negative.</exception>
     public static async Task<KeysetPage<T>> MaterializeAsync<T>(
         this PaginationContext<T> context,
         int pageSize,

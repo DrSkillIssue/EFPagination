@@ -7,8 +7,27 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EFPagination.Internal;
 
+/// <summary>
+/// An arity-specialized projection materializer. Concrete subclasses are closed-generic over the
+/// projected type <typeparamref name="TOut"/> and the keyset key column types, so EF Core sees a
+/// fully-typed <see cref="Expression.New(System.Reflection.ConstructorInfo, Expression[])"/>
+/// projection and emits a single covering <c>SELECT</c>.
+/// </summary>
+/// <typeparam name="T">The entity type.</typeparam>
+/// <typeparam name="TOut">The projected DTO type.</typeparam>
 internal abstract class ProjectionShape<T, TOut> where T : class
 {
+    /// <summary>
+    /// Wraps <paramref name="selector"/> in a typed envelope and materializes <paramref name="takeCount"/>
+    /// rows from <paramref name="source"/>, in correct presentation order.
+    /// </summary>
+    /// <param name="source">The ordered, optionally filtered query.</param>
+    /// <param name="selector">The user-supplied projection.</param>
+    /// <param name="columns">The pagination columns whose values must accompany each row.</param>
+    /// <param name="takeCount">The number of envelopes to materialize (typically <c>pageSize + 1</c>).</param>
+    /// <param name="direction">The pagination direction.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A materialized page exposing the projected items and a typed key extractor.</returns>
     public abstract Task<ProjectionMaterializedPage<T, TOut>> MaterializeAsync(
         IQueryable<T> source,
         Expression<Func<T, TOut>> selector,
@@ -18,18 +37,57 @@ internal abstract class ProjectionShape<T, TOut> where T : class
         CancellationToken ct);
 }
 
+/// <summary>
+/// Holds the result of a <see cref="ProjectionShape{T, TOut}.MaterializeAsync"/> call and exposes
+/// boxing-free extraction of the keyset key values for a given row index.
+/// </summary>
+/// <typeparam name="T">The entity type.</typeparam>
+/// <typeparam name="TOut">The projected DTO type.</typeparam>
 internal abstract class ProjectionMaterializedPage<T, TOut> where T : class
 {
+    /// <summary>
+    /// Gets a value indicating whether the source query had more rows past the trailing envelope.
+    /// </summary>
     public abstract bool HasMore { get; }
+
+    /// <summary>
+    /// Gets the number of envelopes in the page.
+    /// </summary>
     public abstract int Count { get; }
+
+    /// <summary>
+    /// Materializes the projected items into a <see cref="List{TOut}"/>.
+    /// </summary>
+    /// <returns>The projected items.</returns>
     public abstract List<TOut> ToItemList();
+
+    /// <summary>
+    /// Writes the keyset key values for the envelope at <paramref name="itemIndex"/> into the
+    /// supplied bindings, without boxing.
+    /// </summary>
+    /// <param name="itemIndex">The zero-based envelope index.</param>
+    /// <param name="bindings">The typed destination bindings, one per definition column.</param>
     public abstract void ExtractKeysIntoBindings(int itemIndex, ColumnBinding[] bindings);
 }
 
+/// <summary>
+/// Per-definition cache of arity-closed <see cref="ProjectionShape{T, TOut}"/> instances. The
+/// closed generic shape is built once per <see cref="PaginationQueryDefinition{T}.SchemaFingerprint"/>
+/// and reused across calls.
+/// </summary>
+/// <typeparam name="T">The entity type.</typeparam>
+/// <typeparam name="TOut">The projected DTO type.</typeparam>
 internal static class ProjectionShapeCache<T, TOut> where T : class
 {
     private static readonly ConcurrentDictionary<uint, ProjectionShape<T, TOut>> s_cache = new();
 
+    /// <summary>
+    /// Returns the cached <see cref="ProjectionShape{T, TOut}"/> for <paramref name="definition"/>,
+    /// building one on first use.
+    /// </summary>
+    /// <param name="definition">The pagination definition driving the shape arity and key types.</param>
+    /// <returns>The matching <see cref="ProjectionShape{T, TOut}"/>.</returns>
+    /// <exception cref="NotSupportedException"><paramref name="definition"/> has fewer than 1 or more than 8 key columns.</exception>
     public static ProjectionShape<T, TOut> Get(PaginationQueryDefinition<T> definition)
         => s_cache.GetOrAdd(definition.SchemaFingerprint, static (_, def) => Build(def), definition);
 
@@ -63,8 +121,26 @@ internal static class ProjectionShapeCache<T, TOut> where T : class
     }
 }
 
+/// <summary>
+/// Shared helpers for the arity-specialized projection shapes: the EF Core materialization step
+/// (with overflow trim and direction-aware reversal) and a member-info lookup helper for the
+/// envelope construction lambda.
+/// </summary>
 internal static class ProjectionShapeHelpers
 {
+    /// <summary>
+    /// Wraps <paramref name="source"/> in the supplied projection lambda, materializes
+    /// <paramref name="takeCount"/> envelopes, trims the overflow row, and reverses in-place
+    /// when paginating backward.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <typeparam name="TEnv">The closed envelope type.</typeparam>
+    /// <param name="source">The ordered, optionally filtered source query.</param>
+    /// <param name="wrappedLambda">The wrapped projection that constructs envelopes.</param>
+    /// <param name="takeCount">The number of envelopes to fetch (<c>pageSize + 1</c>).</param>
+    /// <param name="direction">The pagination direction.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The materialized envelopes and a <c>HasMore</c> flag.</returns>
     public static async Task<(List<TEnv> Envelopes, bool HasMore)> MaterializeWrappedAsync<T, TEnv>(
         IQueryable<T> source,
         Expression<Func<T, TEnv>> wrappedLambda,
@@ -81,6 +157,14 @@ internal static class ProjectionShapeHelpers
         return (envelopes, hasMore);
     }
 
+    /// <summary>
+    /// Returns the <see cref="PropertyInfo"/> for a public instance property by name. Cached
+    /// reflection helpers in this codebase already exist; this overload is used only during
+    /// shape lambda construction.
+    /// </summary>
+    /// <param name="t">The type to search.</param>
+    /// <param name="name">The property name.</param>
+    /// <returns>The matched <see cref="PropertyInfo"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static MemberInfo Prop(Type t, string name)
         => t.GetProperty(name, BindingFlags.Public | BindingFlags.Instance)!;

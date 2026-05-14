@@ -6,8 +6,24 @@ using EFPagination.Internal;
 
 namespace EFPagination.Cursor;
 
+/// <summary>
+/// Parses Base64Url-encoded cursor tokens produced by <see cref="CursorEncoder"/>. Verifies the
+/// optional HMAC trailer when a signing key is supplied, validates the schema fingerprint, and
+/// decodes the typed body into the caller-supplied <see cref="ColumnBinding"/> array.
+/// </summary>
 internal static class CursorDecoder
 {
+    /// <summary>
+    /// Decodes <paramref name="encoded"/> against <paramref name="definition"/>, writing the
+    /// values into <paramref name="bindings"/> and returning header metadata.
+    /// </summary>
+    /// <typeparam name="T">The entity type associated with <paramref name="definition"/>.</typeparam>
+    /// <param name="encoded">The Base64Url cursor token.</param>
+    /// <param name="definition">The pagination definition the cursor is bound to.</param>
+    /// <param name="bindings">The destination bindings (one per column in <paramref name="definition"/>).</param>
+    /// <param name="signingKey">The HMAC-SHA256 signing key, or <see langword="null"/> to require an unsigned cursor.</param>
+    /// <param name="metadata">When this method returns <see langword="true"/>, the decoded header metadata.</param>
+    /// <returns><see langword="true"/> if the cursor was decoded and (when applicable) verified.</returns>
     [SkipLocalsInit]
     public static bool TryDecodeWithDefinition<T>(
         ReadOnlySpan<char> encoded,

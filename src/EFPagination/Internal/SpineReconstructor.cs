@@ -6,7 +6,8 @@ namespace EFPagination.Internal;
 /// <summary>
 /// Reconstructs a predicate expression tree from a pre-analyzed template using a flat
 /// instruction sequence with shared subexpression elimination. Each placeholder's
-/// Convert node is built once and referenced by all instructions that need it.
+/// <see cref="ExpressionType.Convert"/> node is built once and referenced by all instructions
+/// that need it.
 /// </summary>
 internal sealed class SpineReconstructor
 {
@@ -19,6 +20,12 @@ internal sealed class SpineReconstructor
         _resultSlot = resultSlot;
     }
 
+    /// <summary>
+    /// Attempts to analyze <paramref name="templateBody"/> into a flat instruction sequence.
+    /// </summary>
+    /// <param name="templateBody">The template expression with placeholder parameters.</param>
+    /// <param name="placeholders">The set of placeholder parameters expected in the template.</param>
+    /// <returns>A reconstructor, or <see langword="null"/> when the template shape is not supported.</returns>
     public static SpineReconstructor? TryCreate(Expression templateBody, ParameterExpression[] placeholders)
     {
         var ctx = new AnalysisContext(placeholders);
@@ -27,6 +34,14 @@ internal sealed class SpineReconstructor
         return new SpineReconstructor([.. ctx.Instructions], resultSlot);
     }
 
+    /// <summary>
+    /// Reconstructs a predicate lambda by replaying the flattened instructions with the supplied
+    /// per-placeholder replacement expressions.
+    /// </summary>
+    /// <typeparam name="T">The entity type for the predicate lambda.</typeparam>
+    /// <param name="replacements">The replacement expression per placeholder slot.</param>
+    /// <param name="entityParam">The lambda's entity parameter.</param>
+    /// <returns>A predicate lambda equivalent to the original template with placeholders substituted.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Expression<Func<T, bool>> Reconstruct<T>(Expression[] replacements, ParameterExpression entityParam)
     {

@@ -4,27 +4,48 @@ using System.Text;
 
 namespace EFPagination.Cursor;
 
+/// <summary>
+/// A little-endian write-only adapter over a <see cref="CursorBuffer"/>. Provides typed
+/// primitives (varint, fixed-width, UTF-8 string) that match the cursor binary format.
+/// </summary>
 [SkipLocalsInit]
 internal ref struct CursorWriter
 {
     private readonly CursorBuffer _buffer;
 
+    /// <summary>
+    /// Initializes a writer over the supplied <see cref="CursorBuffer"/>.
+    /// </summary>
+    /// <param name="buffer">The destination buffer; the writer does not own it.</param>
     public CursorWriter(CursorBuffer buffer)
     {
         _buffer = buffer;
     }
 
+    /// <summary>
+    /// Gets the current byte offset within the buffer.
+    /// </summary>
     public readonly int Position => _buffer.Written;
 
+    /// <summary>
+    /// Gets a read-only view over the bytes written so far.
+    /// </summary>
     public readonly ReadOnlySpan<byte> WrittenSpan => _buffer.WrittenSpan;
 
+    /// <summary>
+    /// Sets a bit in the buffer's null bitmap (see <see cref="CursorBuffer.SetBit(int, int)"/>).
+    /// </summary>
+    /// <param name="byteOffset">The offset of the bitmap region in the buffer.</param>
+    /// <param name="bitIndex">The bit index within the bitmap.</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void SetBit(int byteOffset, int bitIndex) => _buffer.SetBit(byteOffset, bitIndex);
 
     /// <summary>
     /// Reserves <paramref name="byteCount"/> zeroed bytes and returns the buffer offset where
-    /// the region starts (used as the null-bitmap region in schema-bound encoding).
+    /// the region starts. Used as the null-bitmap region in schema-bound encoding.
     /// </summary>
+    /// <param name="byteCount">The number of bytes to reserve.</param>
+    /// <returns>The offset of the reserved region in the buffer.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int ReserveZeros(int byteCount)
     {

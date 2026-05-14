@@ -9,9 +9,12 @@ namespace EFPagination;
 public static class PaginationQuery
 {
     /// <summary>
-    /// Builds a pagination query definition from the specified builder action.
-    /// The resulting definition pre-computes column metadata and caches expression tree templates.
+    /// Builds a pagination query definition from the specified builder action. The resulting
+    /// definition pre-computes column metadata and caches expression-tree templates.
     /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="builderAction">An action that configures the pagination columns via a <see cref="PaginationBuilder{T}"/>.</param>
+    /// <returns>A reusable <see cref="PaginationQueryDefinition{T}"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="builderAction"/> is <see langword="null"/>.</exception>
     public static PaginationQueryDefinition<T> Build<T>(
         Action<PaginationBuilder<T>> builderAction)

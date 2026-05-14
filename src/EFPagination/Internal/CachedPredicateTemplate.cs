@@ -16,8 +16,12 @@ internal sealed class CachedPredicateTemplate<T>(PaginationColumn<T>[] columns)
     private readonly PaginationColumn<T>[] _columns = columns;
 
     /// <summary>
-    /// Builds the predicate from already-typed bindings (no boxing, no Convert).
+    /// Builds the keyset filter predicate for <paramref name="direction"/> by instantiating the
+    /// cached template with the supplied bindings. No boxing; no <see cref="ExpressionType.Convert"/> nodes.
     /// </summary>
+    /// <param name="direction">The pagination direction to build for.</param>
+    /// <param name="bindings">The typed boundary bindings, one per definition column.</param>
+    /// <returns>A predicate lambda suitable for <see cref="System.Linq.Queryable.Where{TSource}(IQueryable{TSource}, Expression{Func{TSource, bool}})"/>.</returns>
     public Expression<Func<T, bool>> Build(
         PaginationDirection direction,
         ColumnBinding[] bindings)

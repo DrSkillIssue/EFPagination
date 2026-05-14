@@ -12,8 +12,14 @@ namespace EFPagination.Internal;
 internal static class AdaptingExpressionVisitor
 {
     /// <summary>
-    /// Rebinds a lambda's parameter to <paramref name="newParameter"/>.
+    /// Rebinds a lambda's single parameter to <paramref name="newParameter"/>, producing an
+    /// equivalent lambda whose body references the new parameter at every occurrence of the old one.
     /// </summary>
+    /// <typeparam name="T">The original parameter type.</typeparam>
+    /// <typeparam name="TColumn">The lambda body type.</typeparam>
+    /// <param name="expression">The source lambda.</param>
+    /// <param name="newParameter">The new parameter expression to substitute.</param>
+    /// <returns>A lambda with <paramref name="newParameter"/> in place of the original parameter.</returns>
     public static Expression<Func<T, TColumn>> AdaptParameter<T, TColumn>(
         Expression<Func<T, TColumn>> expression,
         ParameterExpression newParameter)
@@ -28,8 +34,14 @@ internal static class AdaptingExpressionVisitor
 
     /// <summary>
     /// Adapts a lambda to accept an <see cref="object"/> parameter and access equivalent
-    /// properties on <paramref name="newType"/> via loose-typing rules.
+    /// properties on <paramref name="newType"/> via loose-typing rules (matching property names).
     /// </summary>
+    /// <typeparam name="T">The original entity type.</typeparam>
+    /// <typeparam name="TColumn">The lambda body type.</typeparam>
+    /// <param name="expression">The source lambda over <typeparamref name="T"/>.</param>
+    /// <param name="newType">The new reference type whose properties are accessed by name.</param>
+    /// <returns>A lambda over <see cref="object"/> that reads matching properties on <paramref name="newType"/>.</returns>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="newType"/> is missing a property required by the source lambda.</exception>
     public static Expression<Func<object, TColumn>> AdaptType<T, TColumn>(
         Expression<Func<T, TColumn>> expression,
         Type newType)

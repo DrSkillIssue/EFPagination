@@ -14,6 +14,27 @@ var page = await dbContext.Users
     .TakeAsync(20);
 ```
 
+## Server-Side Projection: No Property-Name Matching
+
+The `Expression<Func<T, TOut>>` overloads of `TakeAsync` and `StreamAsync` carry the keyset key values **inside the library** rather than reading them off the projected DTO. As a result, the DTO is free to:
+
+- Rename keyset columns (`Id` → `EntityId`, `Created` → `CreatedAt`)
+- Omit keyset columns entirely
+- Use computed values (`Status = u.IsActive ? "active" : "inactive"`)
+
+```cs
+// Pagination definition orders by Created DESC, Id ASC.
+// The DTO renames Id and omits Created entirely:
+public sealed record UserListItem(int EntityId, string Name, string Email);
+
+var page = await dbContext.Users
+    .Keyset(Definition)
+    .After(cursor)
+    .TakeAsync(20, u => new UserListItem(u.Id, u.Name, u.Email));
+```
+
+Cursor tokens are produced from the key values that flow through the SQL projection alongside the DTO, not from properties on `UserListItem`. See [Server-Side Projection](patterns.md#server-side-projection).
+
 ## Low-Level API
 
 The `Paginate`, `HasPreviousAsync`, `HasNextAsync`, and `EnsureCorrectOrder` extension methods are **loosely typed**. Reference objects and data lists don't need to be the entity type -- they just need properties with names matching the pagination columns.

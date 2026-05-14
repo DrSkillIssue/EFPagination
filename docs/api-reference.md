@@ -34,7 +34,9 @@ A zero-allocation `readonly struct` that accumulates pagination parameters. All 
 | `IncludeCount()` | Enables total row count computation via a separate SQL query. |
 | `MaxPageSize(int max)` | Sets the maximum page size. Requests exceeding this value are clamped. Defaults to 500. |
 | `TakeAsync(int pageSize, CancellationToken ct)` | Executes the query and returns a `CursorPage<T>`. |
+| `TakeAsync<TOut>(int pageSize, Expression<Func<T, TOut>> selector, CancellationToken ct)` | Executes with a **server-side projection** and returns a `CursorPage<TOut>`. The projection runs inside the SQL statement that applies the keyset `ORDER BY`. See [Server-Side Projection](patterns.md#server-side-projection). |
 | `StreamAsync(int pageSize, CancellationToken ct)` | Streams all remaining pages forward as `IAsyncEnumerable<List<T>>`. |
+| `StreamAsync<TOut>(int pageSize, Expression<Func<T, TOut>> selector, CancellationToken ct)` | Streams projected batches via a server-side projection. |
 
 ### CursorPage\<T\>
 
@@ -67,6 +69,10 @@ var page = await db.Users.Keyset(definition).AfterEntity(lastUser).TakeAsync(20)
 
 // Stream all pages
 await foreach (var batch in db.Users.Keyset(definition).StreamAsync(100)) { }
+
+// Server-side projection — SQL emits only the projected columns plus keyset keys
+var page = await db.Users.Keyset(definition).After(cursor).TakeAsync(20,
+    u => new UserListItem(u.Id, u.Name, u.Email, u.Created));
 ```
 
 ## PaginationQueryDefinition\<T\>
@@ -177,72 +183,74 @@ SortField.Create<User>("created", "Created")
 
 ## PaginationCursor
 
-Encodes and decodes opaque cursor tokens containing typed keyset values and optional metadata.
+Encodes and decodes opaque cursor tokens containing typed keyset values and optional metadata. All entry points are **schema-bound** to a `PaginationQueryDefinition<T>`: type information is omitted from the payload, and the decoder reconstructs CLR types from the matching definition while validating compatibility via a schema fingerprint.
 
 ### Encode
 
 ```cs
-string Encode(ReadOnlySpan<ColumnValue> values, PaginationCursorOptions? options = null);
+// From a reference entity (or DTO with matching property names):
+string Encode<T>(
+    PaginationQueryDefinition<T> definition,
+    T reference,
+    PaginationCursorOptions options = default) where T : notnull;
+
+// From pre-extracted boundary values:
+string Encode<T>(
+    PaginationQueryDefinition<T> definition,
+    PaginationValues<T> values,
+    PaginationCursorOptions options = default);
 ```
 
 ### TryDecode
 
 ```cs
-// Basic decode into a ColumnValue buffer:
-bool TryDecode(
-    ReadOnlySpan<char> encoded,
-    Span<ColumnValue> values,
-    out int written,
-    byte[]? signingKey = null);
-
-// Decode with metadata extraction:
-bool TryDecode(
-    ReadOnlySpan<char> encoded,
-    Span<ColumnValue> values,
-    out int written,
-    out string? sortBy,
-    out int? totalCount,
-    byte[]? signingKey = null);
-
-// Definition-based decode into PaginationValues<T>:
 bool TryDecode<T>(
     ReadOnlySpan<char> encoded,
     PaginationQueryDefinition<T> definition,
     out PaginationValues<T> values,
-    out int written);
-
-// Definition-based decode with metadata:
-bool TryDecode<T>(
-    ReadOnlySpan<char> encoded,
-    PaginationQueryDefinition<T> definition,
-    out PaginationValues<T> values,
-    out int written,
-    out string? sortBy,
-    out int? totalCount);
+    out CursorMetadata metadata,
+    byte[]? signingKey = null);
 ```
 
-When a `signingKey` is passed, `TryDecode` verifies the HMAC-SHA256 signature appended by `Encode` and returns `false` if verification fails.
-
-The definition-based overloads additionally verify the schema fingerprint embedded in the cursor, rejecting cursors that were encoded against a different definition shape.
+When a `signingKey` is passed, `TryDecode` verifies the HMAC-SHA256 signature appended by `Encode` and returns `false` if verification fails. The decoder also validates the schema fingerprint embedded in the cursor, rejecting cursors that were encoded against a different definition shape.
 
 Supported value kinds include:
 
 - `null`, `string`, `bool`, `char`
 - integral types, `float`, `double`, `decimal`
 - `Guid`, `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`
-- enum values
+- enum values (including `Nullable<TEnum>`)
 
-`TryDecode` fills the supplied buffer in order and returns `false` for malformed, tampered, or shape-mismatched cursors.
+`TryDecode` returns `false` for malformed, tampered, or shape-mismatched cursors.
+
+## CursorMetadata
+
+Optional header metadata recovered alongside the values when a cursor is decoded:
+
+```cs
+public readonly record struct CursorMetadata(
+    string? SortBy,
+    int? TotalCount,
+    uint? Fingerprint,
+    int ValueCount);
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `SortBy` | `string?` | The logical sort key embedded in the cursor, or `null` when absent. |
+| `TotalCount` | `int?` | The total row count embedded in the cursor, or `null` when absent. |
+| `Fingerprint` | `uint?` | The schema fingerprint embedded in the cursor. |
+| `ValueCount` | `int` | The number of boundary values decoded. |
 
 ## ColumnValue
 
-Stores one cursor field:
+Named pagination boundary value for manual direct-value `Paginate(...)` calls:
 
 ```cs
 public readonly record struct ColumnValue(string Name, object? Value);
 ```
 
-The `Name` is not serialized into the cursor token. It exists so callers can prepare a destination span with the expected column order and then recover values by semantic name after decode.
+Used with the `Paginate(definition, direction, ReadOnlySpan<ColumnValue>)` overload to seed the keyset boundary by name without an entity instance. Not used in cursor encoding or decoding — cursors carry typed values bound to the definition order, not name/value pairs.
 
 ## PaginationCursorOptions
 
@@ -252,36 +260,39 @@ Optional metadata stored alongside cursor values:
 public readonly record struct PaginationCursorOptions(
     string? SortBy = null,
     int? TotalCount = null,
-    uint? SchemaFingerprint = null,
     byte[]? SigningKey = null);
 ```
 
 | Parameter | Description |
 |-----------|-------------|
-| `SortBy` | Logical sort key to embed in the cursor (round-tripped through decode). |
+| `SortBy` | Logical sort key to embed in the cursor (round-tripped through decode as `CursorMetadata.SortBy`). |
 | `TotalCount` | Total row count to carry forward so subsequent pages skip the `COUNT` query. |
-| `SchemaFingerprint` | Definition fingerprint for detecting stale cursors from schema changes. |
-| `SigningKey` | HMAC-SHA256 key. When set, `Encode` appends a truncated HMAC; `TryDecode` verifies it. |
+| `SigningKey` | HMAC-SHA256 key. When set, `Encode` appends a 128-bit truncated HMAC; `TryDecode` verifies it. |
+
+> [!NOTE]
+> The schema fingerprint is derived automatically from the supplied `PaginationQueryDefinition<T>`. There is no caller-supplied fingerprint option.
 
 ## PaginationValues\<T\>
 
-Ordered pagination boundary values bound to a specific `PaginationQueryDefinition<T>`.
+Ordered pagination boundary values bound to a specific `PaginationQueryDefinition<T>`. Allocation-free `readonly record struct` wrapper over the underlying typed bindings.
 
 ```cs
-public static PaginationValues<T> Create(params object?[] values);
+public static PaginationValues<T> Create(
+    PaginationQueryDefinition<T> definition,
+    params object?[] values);
 ```
 
-Create a `PaginationValues<T>` manually when you have the values in definition column order:
+Create a `PaginationValues<T>` manually when you have the values in definition column order. The definition is required so values can be coerced to each column's CLR type:
 
 ```cs
-var values = PaginationValues<User>.Create(lastCreated, lastId);
+var values = PaginationValues<User>.Create(definition, lastCreated, lastId);
 var page = await dbContext.Users
     .Keyset(definition)
     .After(values)
     .TakeAsync(20);
 ```
 
-The definition-based `PaginationCursor.TryDecode<T>` overload also returns a `PaginationValues<T>`.
+`PaginationCursor.TryDecode<T>` also produces a `PaginationValues<T>` from an encoded cursor.
 
 ## PaginationDirection
 
@@ -462,6 +473,28 @@ Task<KeysetPage<T>> ExecuteAsync<T>(
     CancellationToken ct = default) where T : class;
 ```
 
+### ExecuteFromCursorAsync
+
+Decodes an opaque cursor, executes the paginated query, and encodes next/previous cursors in one call:
+
+```cs
+Task<CursorPage<T>> ExecuteFromCursorAsync<T>(
+    IQueryable<T> query,
+    PaginationQueryDefinition<T> definition,
+    ExecutionOptions options,
+    ReadOnlySpan<char> cursor,
+    CancellationToken ct = default) where T : class;
+
+Task<CursorPage<T>> ExecuteFromCursorAsync<T>(
+    IQueryable<T> query,
+    PaginationQueryDefinition<T> definition,
+    ExecutionOptions options,
+    string? cursor,
+    CancellationToken ct = default) where T : class;
+```
+
+Pass an empty span or `null` cursor for the first page. Throws `ArgumentException` for invalid or expired cursors.
+
 ### ExecutionOptions
 
 Controls `PaginationExecutor` materialization:
@@ -537,6 +570,58 @@ PaginatedResponse<TOut> ToPaginatedResponse<T, TOut>(
 ```
 
 The `TotalCount` is mapped to `null` when the source value is negative.
+
+### PaginateAsync
+
+One-call endpoint helpers that bind a `PaginationRequest`, execute the query, and return a typed `PaginatedResponse<TOut>`. Two flavors:
+
+```cs
+// In-memory projection — runs the selector after materialization:
+Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
+    this IQueryable<T> query,
+    PaginationQueryDefinition<T> definition,
+    PaginationRequest request,
+    Func<T, TOut> selector,
+    int maxPageSize = 100,
+    bool includeCount = false,
+    CancellationToken ct = default) where T : class;
+
+// Server-side projection — the selector translates to SQL:
+Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
+    this IQueryable<T> query,
+    PaginationQueryDefinition<T> definition,
+    PaginationRequest request,
+    Expression<Func<T, TOut>> selector,
+    int maxPageSize = 100,
+    bool includeCount = false,
+    CancellationToken ct = default) where T : class;
+```
+
+Both have a `PaginationSortRegistry<T>` overload that resolves the definition from `request.SortBy`/`request.SortDir`:
+
+```cs
+Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
+    this IQueryable<T> query,
+    PaginationSortRegistry<T> registry,
+    PaginationRequest request,
+    Func<T, TOut> selector,
+    int maxPageSize = 100,
+    bool includeCount = false,
+    CancellationToken ct = default) where T : class;
+
+Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
+    this IQueryable<T> query,
+    PaginationSortRegistry<T> registry,
+    PaginationRequest request,
+    Expression<Func<T, TOut>> selector,
+    int maxPageSize = 100,
+    bool includeCount = false,
+    CancellationToken ct = default) where T : class;
+```
+
+The `Expression<Func<T, TOut>>` overloads run the projection inside the SQL statement that applies the keyset `ORDER BY`. Subqueries inside the selector stay server-side and the SELECT list materializes only the projected columns plus the keyset key columns. The pagination definition must have 1–8 key columns; outside that range, the overload throws `NotSupportedException`.
+
+See [Server-Side Projection](patterns.md#server-side-projection) for end-to-end examples.
 
 ## Exceptions
 

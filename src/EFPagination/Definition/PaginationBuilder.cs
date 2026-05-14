@@ -35,7 +35,6 @@ public sealed class PaginationBuilder<T>
         bool isDescending)
     {
         ArgumentNullException.ThrowIfNull(columnExpression);
-        MaybeRegisterEnum(typeof(TColumn));
         _columns.Add(new PaginationColumn<T, TColumn>(isDescending, columnExpression));
         return this;
     }
@@ -45,8 +44,6 @@ public sealed class PaginationBuilder<T>
         var pi = typeof(T).GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)
             ?? throw new ArgumentException($"Public instance property '{propertyName}' not found on type '{typeof(T).Name}'.", nameof(propertyName));
 
-        MaybeRegisterEnum(pi.PropertyType);
-
         var param = Expression.Parameter(typeof(T), "x");
         var delegateType = typeof(Func<,>).MakeGenericType(typeof(T), pi.PropertyType);
         var lambda = Expression.Lambda(delegateType, Expression.Property(param, pi), param);
@@ -54,12 +51,5 @@ public sealed class PaginationBuilder<T>
         var concreteType = typeof(PaginationColumn<,>).MakeGenericType(typeof(T), pi.PropertyType);
         _columns.Add((PaginationColumn<T>)Activator.CreateInstance(concreteType, isDescending, lambda)!);
         return this;
-    }
-
-    private static void MaybeRegisterEnum(Type columnType)
-    {
-        var underlying = Nullable.GetUnderlyingType(columnType) ?? columnType;
-        if (underlying.IsEnum)
-            PaginationCursor.RegisterEnumType(underlying);
     }
 }

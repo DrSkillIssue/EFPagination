@@ -19,8 +19,7 @@ internal static class CursorPair
 
         var options = new PaginationCursorOptions(
             sortBy,
-            totalCount > 0 ? totalCount : null,
-            definition.SchemaFingerprint);
+            totalCount > 0 ? totalCount : null);
 
         var next = hasMore ? PaginationCursor.Encode(definition, items[^1], options) : null;
         var previous = (hasInitialReference || direction == PaginationDirection.Backward)

@@ -1,13 +1,38 @@
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
 namespace EFPagination.Cursor;
 
-internal sealed class EnumCodec<TEnum> : ColumnCodec<TEnum>
-    where TEnum : struct, Enum
+/// <summary>
+/// Per-closed-generic enum read/write. <see cref="Instance"/> resolves at static-init to:
+/// • a typed <see cref="EnumIoImpl{TEnum}"/> when <typeparamref name="TColumn"/> is an enum,
+/// • a typed <see cref="NullableEnumIoImpl{TEnum}"/> when <typeparamref name="TColumn"/> is <see cref="Nullable{T}"/> over an enum,
+/// • <see langword="null"/> otherwise (caller routes through <see cref="TypedCursorIo"/>).
+/// </summary>
+internal abstract class EnumIo<TColumn>
 {
-    public override byte Kind => CursorFormat.KindEnum;
+    public abstract void Write(ref CursorWriter writer, TColumn value);
+    public abstract TColumn Read(ref CursorReader reader);
 
+    /// <summary>
+    /// Resolved once per closed generic at static-init time. <see langword="null"/> when
+    /// <typeparamref name="TColumn"/> is neither an enum nor <see cref="Nullable{T}"/> over an enum.
+    /// </summary>
+    public static readonly EnumIo<TColumn>? Instance = CreateInstance();
+
+    private static EnumIo<TColumn>? CreateInstance()
+    {
+        var underlying = Nullable.GetUnderlyingType(typeof(TColumn)) ?? typeof(TColumn);
+        if (!underlying.IsEnum) return null;
+
+        var openType = typeof(TColumn) == underlying
+            ? typeof(EnumIoImpl<>).MakeGenericType(underlying)
+            : typeof(NullableEnumIoImpl<>).MakeGenericType(underlying);
+        return (EnumIo<TColumn>)Activator.CreateInstance(openType)!;
+    }
+}
+
+internal sealed class EnumIoImpl<TEnum> : EnumIo<TEnum> where TEnum : struct, Enum
+{
     public override void Write(ref CursorWriter writer, TEnum value)
     {
         switch (Unsafe.SizeOf<TEnum>())
@@ -35,52 +60,12 @@ internal sealed class EnumCodec<TEnum> : ColumnCodec<TEnum>
     }
 }
 
-internal sealed class NullableEnumCodec<TEnum> : ColumnCodec<TEnum?>
-    where TEnum : struct, Enum
+internal sealed class NullableEnumIoImpl<TEnum> : EnumIo<TEnum?> where TEnum : struct, Enum
 {
-    private readonly EnumCodec<TEnum> _inner = new();
-    public override byte Kind => CursorFormat.KindEnum;
+    private readonly EnumIoImpl<TEnum> _inner = new();
 
     public override void Write(ref CursorWriter writer, TEnum? value)
-    {
-        if (!value.HasValue)
-            throw new InvalidOperationException("Null nullable enum should be handled by the null bitmap.");
-        _inner.Write(ref writer, value.GetValueOrDefault());
-    }
+        => _inner.Write(ref writer, value.GetValueOrDefault());
 
     public override TEnum? Read(ref CursorReader reader) => _inner.Read(ref reader);
-}
-
-/// <summary>
-/// Lazy factory for closed-generic enum codecs (with optional <see cref="Nullable{T}"/> wrapping).
-/// </summary>
-internal static class EnumCodecFactory
-{
-    private static readonly ConcurrentDictionary<(Type Underlying, bool Nullable), ColumnCodec> s_cache = new();
-
-    public static ColumnCodec Create(Type enumType, bool nullable = false)
-        => s_cache.GetOrAdd((enumType, nullable), static key =>
-        {
-            var open = key.Nullable ? typeof(NullableEnumCodec<>) : typeof(EnumCodec<>);
-            return (ColumnCodec)Activator.CreateInstance(open.MakeGenericType(key.Underlying))!;
-        });
-}
-
-internal static class EnumTypeRegistry
-{
-    private static readonly ConcurrentDictionary<string, Type> s_byStableName = new();
-    private static readonly ConcurrentDictionary<Type, string> s_byType = new();
-
-    public static string Register(Type enumType)
-        => s_byType.GetOrAdd(enumType, static t =>
-        {
-            var fullName = t.FullName ?? throw new NotSupportedException($"Enum type '{t}' does not have a full name.");
-            var assemblyName = t.Assembly.GetName().Name ?? throw new NotSupportedException($"Enum type '{t}' assembly does not have a name.");
-            var stableName = string.Concat(fullName, ", ", assemblyName);
-            s_byStableName.TryAdd(stableName, t);
-            return stableName;
-        });
-
-    public static bool TryResolve(string stableName, out Type enumType)
-        => s_byStableName.TryGetValue(stableName, out enumType!);
 }

@@ -90,13 +90,6 @@ internal abstract class PaginationColumn<T>(
     public abstract void DecodeCursorValueInto(ref CursorReader reader, ColumnBinding binding);
 
     /// <summary>
-    /// Decodes a tagged-format value directly into <paramref name="binding"/> without the
-    /// boxed-<see cref="object"/> round-trip. Returns <see langword="false"/> if the encoded kind
-    /// does not match the column's expected codec or the cursor is malformed.
-    /// </summary>
-    public abstract bool TryDecodeTaggedValueInto(ref CursorReader reader, byte kind, ColumnBinding binding);
-
-    /// <summary>
     /// Writes <paramref name="binding"/>'s value from a boxed value. Used when the source value
     /// arrived already boxed (e.g. <see cref="ColumnValue.Value"/> or the legacy object[] shape).
     /// </summary>
@@ -178,7 +171,7 @@ internal sealed class PaginationColumn<T, TColumn>(
     private static readonly MethodInfo s_thenBy = QueryableMethods.Get(nameof(Queryable.ThenBy), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
     private static readonly MethodInfo s_thenByDesc = QueryableMethods.Get(nameof(Queryable.ThenByDescending), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
     private static readonly bool s_isColumnNullable = !typeof(TColumn).IsValueType || Nullable.GetUnderlyingType(typeof(TColumn)) is not null;
-    private static readonly ColumnCodec<TColumn> s_codec = ColumnCodecRegistry.Resolve<TColumn>();
+    private static readonly EnumIo<TColumn>? s_enumIo = EnumIo<TColumn>.Instance;
 
     private readonly ConcurrentDictionary<Type, Func<object, TColumn>> _referenceTypeToCompiledAccessMap = new();
     private volatile Type? _lastAccessType;
@@ -258,7 +251,7 @@ internal sealed class PaginationColumn<T, TColumn>(
         var value = ObtainValueTyped(reference);
         if (default(TColumn) is null && value is null)
             return false;
-        s_codec.Write(ref writer, value);
+        WriteValue(ref writer, value);
         return true;
     }
 
@@ -268,7 +261,7 @@ internal sealed class PaginationColumn<T, TColumn>(
         var value = Unsafe.As<ColumnBinding<TColumn>>(binding).Value;
         if (default(TColumn) is null && value is null)
             return false;
-        s_codec.Write(ref writer, value);
+        WriteValue(ref writer, value);
         return true;
     }
 
@@ -278,44 +271,19 @@ internal sealed class PaginationColumn<T, TColumn>(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override void DecodeCursorValueInto(ref CursorReader reader, ColumnBinding binding)
     {
-        Unsafe.As<ColumnBinding<TColumn>>(binding).Value = s_codec.Read(ref reader);
+        Unsafe.As<ColumnBinding<TColumn>>(binding).Value = ReadValue(ref reader);
     }
 
-    private static readonly byte[]? s_enumStableNameUtf8 = ComputeEnumStableNameUtf8();
-
-    private static byte[]? ComputeEnumStableNameUtf8()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void WriteValue(ref CursorWriter writer, TColumn value)
     {
-        var underlying = Nullable.GetUnderlyingType(typeof(TColumn)) ?? typeof(TColumn);
-        if (!underlying.IsEnum) return null;
-        return System.Text.Encoding.UTF8.GetBytes(EnumTypeRegistry.Register(underlying));
+        if (s_enumIo is not null) s_enumIo.Write(ref writer, value);
+        else TypedCursorIo.Write(ref writer, value);
     }
 
-    public override bool TryDecodeTaggedValueInto(ref CursorReader reader, byte kind, ColumnBinding binding)
-    {
-        if (kind == CursorFormat.KindNull)
-        {
-            if (default(TColumn) is not null) return false;
-            Unsafe.As<ColumnBinding<TColumn>>(binding).Value = default!;
-            return true;
-        }
-
-        if (kind == CursorFormat.KindEnum)
-        {
-            if (s_enumStableNameUtf8 is null) return false;
-            var byteLen = (int)reader.ReadVarUInt32();
-            if (reader.Failed || byteLen != s_enumStableNameUtf8.Length) return false;
-            var nameBytes = reader.ReadRawBytes(byteLen);
-            if (reader.Failed) return false;
-            if (!nameBytes.SequenceEqual(s_enumStableNameUtf8)) return false;
-            Unsafe.As<ColumnBinding<TColumn>>(binding).Value = s_codec.Read(ref reader);
-            return !reader.Failed;
-        }
-
-        if (kind != s_codec.Kind) return false;
-
-        Unsafe.As<ColumnBinding<TColumn>>(binding).Value = s_codec.Read(ref reader);
-        return !reader.Failed;
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static TColumn ReadValue(ref CursorReader reader)
+        => s_enumIo is not null ? s_enumIo.Read(ref reader) : TypedCursorIo.Read<TColumn>(ref reader);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override void WriteBindingFromBoxed(object? boxed, ColumnBinding binding)

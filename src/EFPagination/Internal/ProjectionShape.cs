@@ -10,7 +10,7 @@ namespace EFPagination.Internal;
 /// <summary>
 /// An arity-specialized projection materializer. Concrete subclasses are closed-generic over the
 /// projected type <typeparamref name="TOut"/> and the keyset key column types, so EF Core sees a
-/// fully-typed <see cref="Expression.New(System.Reflection.ConstructorInfo, Expression[])"/>
+/// fully-typed <see cref="Expression.New(ConstructorInfo, Expression[])"/>
 /// projection and emits a single covering <c>SELECT</c>.
 /// </summary>
 /// <typeparam name="T">The entity type.</typeparam>

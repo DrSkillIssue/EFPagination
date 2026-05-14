@@ -20,11 +20,11 @@ public sealed class AllPrimitivesModel
     public float Single { get; set; }
     public double Double { get; set; }
     public decimal Decimal { get; set; }
-    public System.Guid Guid { get; set; }
-    public System.DateTime DateTime { get; set; }
-    public System.DateTimeOffset DateTimeOffset { get; set; }
-    public System.DateOnly DateOnly { get; set; }
-    public System.TimeOnly TimeOnly { get; set; }
-    public System.TimeSpan TimeSpan { get; set; }
+    public Guid Guid { get; set; }
+    public DateTime DateTime { get; set; }
+    public DateTimeOffset DateTimeOffset { get; set; }
+    public DateOnly DateOnly { get; set; }
+    public TimeOnly TimeOnly { get; set; }
+    public TimeSpan TimeSpan { get; set; }
     public TestEnum Enum { get; set; }
 }

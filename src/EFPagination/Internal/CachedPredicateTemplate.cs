@@ -21,7 +21,7 @@ internal sealed class CachedPredicateTemplate<T>(PaginationColumn<T>[] columns)
     /// </summary>
     /// <param name="direction">The pagination direction to build for.</param>
     /// <param name="bindings">The typed boundary bindings, one per definition column.</param>
-    /// <returns>A predicate lambda suitable for <see cref="System.Linq.Queryable.Where{TSource}(IQueryable{TSource}, Expression{Func{TSource, bool}})"/>.</returns>
+    /// <returns>A predicate lambda suitable for <see cref="Queryable.Where{TSource}(IQueryable{TSource}, Expression{Func{TSource, bool}})"/>.</returns>
     public Expression<Func<T, bool>> Build(
         PaginationDirection direction,
         ColumnBinding[] bindings)

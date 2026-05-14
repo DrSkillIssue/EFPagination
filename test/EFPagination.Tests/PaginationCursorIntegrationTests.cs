@@ -1,6 +1,5 @@
 using System.Buffers.Text;
 using System.Globalization;
-using System.Text;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,7 +61,7 @@ public class PaginationCursorIntegrationTests
             Single = 1.25f,
             Double = 2.5d,
             Decimal = 3.75m,
-            Guid = System.Guid.Parse("b0a8f446-a2dd-4f79-9ab8-0c0ae43854d7"),
+            Guid = Guid.Parse("b0a8f446-a2dd-4f79-9ab8-0c0ae43854d7"),
             DateTime = new DateTime(2024, 05, 06, 07, 08, 09, DateTimeKind.Utc),
             DateTimeOffset = new DateTimeOffset(2024, 05, 06, 07, 08, 09, TimeSpan.FromHours(2)),
             DateOnly = new DateOnly(2024, 05, 06),

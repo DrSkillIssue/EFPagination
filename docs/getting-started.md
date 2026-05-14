@@ -125,6 +125,25 @@ app.MapGet("/api/users", async (AppDbContext db, [AsParameters] PaginationReques
 
 `PaginationRequest` binds `After`, `Before`, `PageSize`, `SortBy`, and `SortDir` from the query string. `ToPaginatedResponse` converts the `CursorPage<T>` to a `PaginatedResponse<TOut>` with `Items`, `NextCursor`, `PreviousCursor`, and `TotalCount`.
 
+### Server-Side Projection
+
+Pass an `Expression<Func<T, TOut>>` to project to a DTO **inside the SQL statement**. The SELECT list materializes only the projected columns plus the keyset key columns — no entity over-fetch, no N+1 on subqueries:
+
+```cs
+public sealed record UserListItem(int Id, string Name, DateTime Created);
+
+app.MapGet("/api/users", (AppDbContext db, [AsParameters] PaginationRequest request) =>
+    db.Users.PaginateAsync(
+        Definition,
+        request,
+        u => new UserListItem(u.Id, u.Name, u.Created),
+        maxPageSize: 100));
+```
+
+The DTO does not need property names matching the pagination definition — the keyset key values flow through internally. See [Server-Side Projection](patterns.md#server-side-projection) for subquery composition and streaming variants.
+
+### Dynamic Sorting
+
 For dynamic sorting via a registry:
 
 ```cs

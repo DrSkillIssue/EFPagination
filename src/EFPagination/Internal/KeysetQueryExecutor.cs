@@ -1,12 +1,26 @@
-#pragma warning disable CA1002
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Microsoft.EntityFrameworkCore;
 
 namespace EFPagination.Internal;
 
+/// <summary>
+/// Backs <see cref="KeysetQueryBuilder{T}.TakeAsync(int, CancellationToken)"/> and
+/// <see cref="KeysetQueryBuilder{T}.StreamAsync(int, CancellationToken)"/>. Resolves the
+/// builder's accumulated state to a concrete <see cref="PaginationContext{T}"/>, materializes
+/// the page, and assembles the resulting <see cref="CursorPage{T}"/>.
+/// </summary>
 internal static class KeysetQueryExecutor
 {
+    /// <summary>
+    /// Executes the builder as a one-shot paginated query.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="builder">The accumulated builder state.</param>
+    /// <param name="pageSize">The requested page size.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A <see cref="CursorPage{T}"/> with items, cursor tokens, and optional total count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentException">The builder's cursor string is invalid or expired.</exception>
     public static async Task<CursorPage<T>> ExecuteAsync<T>(
         KeysetQueryBuilder<T> builder,
         int pageSize,
@@ -14,83 +28,34 @@ internal static class KeysetQueryExecutor
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
 
-        var effectivePageSize = pageSize > builder.MaxPageSizeValue
-            ? builder.MaxPageSizeValue
-            : pageSize;
+        var effectivePageSize = pageSize > builder.MaxPageSizeValue ? builder.MaxPageSizeValue : pageSize;
 
-        var definition = builder.Definition;
-        var source = builder.Source;
-        var direction = builder.Direction;
+        var resolved = ResolveContext(builder, builder.Direction);
+        var sortBy = builder.SortBy ?? resolved.SortBy;
 
-        string? sortBy = builder.SortBy;
-        int? previousTotalCount = null;
-        bool hasCursor;
-        PaginationContext<T> context;
-
-        if (builder.CursorString is not null)
-        {
-            hasCursor = true;
-            if (!PaginationCursor.TryDecode(builder.CursorString.AsSpan(), definition,
-                    out var values, out _, out var decodedSortBy, out previousTotalCount))
-            {
-                throw new ArgumentException("Invalid or expired cursor.");
-            }
-
-            sortBy ??= decodedSortBy;
-            context = source.Paginate(definition, direction, values);
-        }
-        else if (builder.BoundValues is not null)
-        {
-            hasCursor = true;
-            context = source.Paginate(definition, direction, builder.BoundValues);
-        }
-        else if (builder.Reference is not null)
-        {
-            hasCursor = true;
-            context = source.Paginate(definition, direction, builder.Reference);
-        }
-        else
-        {
-            hasCursor = false;
-            context = source.Paginate(definition, direction);
-        }
-
-        var items = await context.Query
-            .Take(effectivePageSize + 1)
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
-
-        var hasMore = items.Count > effectivePageSize;
-        if (hasMore)
-            items.RemoveAt(items.Count - 1);
-
-        if (direction == PaginationDirection.Backward)
-            CollectionsMarshal.AsSpan(items).Reverse();
+        var (items, hasMore) = await PageMaterializer.MaterializeAsync(
+            resolved.Context.Query, effectivePageSize, builder.Direction, ct).ConfigureAwait(false);
 
         var totalCount = builder.ShouldIncludeCount
-            ? await source.CountAsync(ct).ConfigureAwait(false)
-            : previousTotalCount ?? -1;
+            ? await builder.Source.CountAsync(ct).ConfigureAwait(false)
+            : resolved.TotalCount ?? -1;
 
-        string? nextCursor = null;
-        string? previousCursor = null;
+        var (next, previous) = CursorPair.Encode(
+            builder.Definition, items, hasMore, resolved.HasInitialReference, builder.Direction, sortBy, totalCount);
 
-        if (items.Count > 0)
-        {
-            var cursorOptions = new PaginationCursorOptions(
-                sortBy,
-                totalCount > 0 ? totalCount : null,
-                definition.SchemaFingerprint);
-
-            if (hasMore)
-                nextCursor = EncodeCursorFromItem(definition, items[^1], cursorOptions);
-
-            if (hasCursor || direction == PaginationDirection.Backward)
-                previousCursor = EncodeCursorFromItem(definition, items[0], cursorOptions);
-        }
-
-        return new CursorPage<T>(items, nextCursor, previousCursor, totalCount);
+        return new CursorPage<T>(items, next, previous, totalCount);
     }
 
+    /// <summary>
+    /// Executes the builder as a streaming forward enumeration of pages.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="builder">The accumulated builder state.</param>
+    /// <param name="pageSize">The requested page size per batch.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>An async enumerable yielding one materialized page per iteration.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is zero or negative.</exception>
+    /// <exception cref="InvalidOperationException">The builder is configured for backward pagination.</exception>
     public static async IAsyncEnumerable<List<T>> StreamAsync<T>(
         KeysetQueryBuilder<T> builder,
         int pageSize,
@@ -101,68 +66,65 @@ internal static class KeysetQueryExecutor
         if (builder.Direction == PaginationDirection.Backward)
             throw new InvalidOperationException("StreamAsync only supports forward pagination. Use After() instead of Before().");
 
-        var definition = builder.Definition;
-        var source = builder.Source;
+        var resolved = ResolveContext(builder, PaginationDirection.Forward);
 
-        PaginationContext<T> firstContext;
-        if (builder.CursorString is not null)
+        await foreach (var page in PaginationStreaming.StreamForwardAsync(
+            builder.Source, builder.Definition, resolved.Context, pageSize, ct).ConfigureAwait(false))
         {
-            if (!PaginationCursor.TryDecode(builder.CursorString.AsSpan(), definition,
-                    out var values, out _))
-            {
-                throw new ArgumentException("Invalid or expired cursor.");
-            }
-
-            firstContext = source.Paginate(definition, PaginationDirection.Forward, values);
-        }
-        else if (builder.BoundValues is not null)
-        {
-            firstContext = source.Paginate(definition, PaginationDirection.Forward, builder.BoundValues);
-        }
-        else if (builder.Reference is not null)
-        {
-            firstContext = source.Paginate(definition, PaginationDirection.Forward, builder.Reference);
-        }
-        else
-        {
-            firstContext = source.Paginate(definition, PaginationDirection.Forward, (object?)null);
-        }
-
-        var items = await firstContext.Query.Take(pageSize + 1).ToListAsync(ct).ConfigureAwait(false);
-        var hasMore = items.Count > pageSize;
-        if (hasMore) items.RemoveAt(items.Count - 1);
-        if (items.Count == 0) yield break;
-        object reference = items[^1];
-        yield return items;
-
-        while (hasMore)
-        {
-            var context = source.Paginate(definition, PaginationDirection.Forward, reference);
-            items = await context.Query.Take(pageSize + 1).ToListAsync(ct).ConfigureAwait(false);
-            hasMore = items.Count > pageSize;
-            if (hasMore) items.RemoveAt(items.Count - 1);
-            if (items.Count == 0) yield break;
-            reference = items[^1];
-            yield return items;
+            yield return page;
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static string EncodeCursorFromItem<T>(
-        PaginationQueryDefinition<T> definition,
-        object item,
-        PaginationCursorOptions options)
-    {
-        var columns = definition.Columns;
-        var values = new ColumnValue[columns.Length];
+    /// <summary>
+    /// The resolved inputs to the materialization phase.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="Context">The ordered, optionally filtered query.</param>
+    /// <param name="SortBy">The logical sort key recovered from the incoming cursor, if any.</param>
+    /// <param name="TotalCount">The total count recovered from the incoming cursor, if any.</param>
+    /// <param name="HasInitialReference">Whether the request supplied a cursor, reference object, or bound values.</param>
+    internal readonly record struct ResolvedContext<T>(
+        PaginationContext<T> Context,
+        string? SortBy,
+        int? TotalCount,
+        bool HasInitialReference) where T : class;
 
-        for (var i = 0; i < columns.Length; i++)
+    /// <summary>
+    /// Maps the builder's accumulated state to a concrete <see cref="ResolvedContext{T}"/>.
+    /// </summary>
+    /// <typeparam name="T">The entity type.</typeparam>
+    /// <param name="builder">The accumulated builder state.</param>
+    /// <param name="direction">The pagination direction to apply.</param>
+    /// <returns>The resolved inputs for the materialization phase.</returns>
+    /// <exception cref="ArgumentException">The builder's cursor string is invalid or expired.</exception>
+    internal static ResolvedContext<T> ResolveContext<T>(
+        in KeysetQueryBuilder<T> builder,
+        PaginationDirection direction) where T : class
+    {
+        var definition = builder.Definition;
+        var source = builder.Source;
+
+        if (builder.CursorString is not null)
         {
-            values[i] = new ColumnValue(
-                columns[i].GetRequiredPropertyNameForColumnValues(),
-                columns[i].ObtainValue(item));
+            if (!PaginationCursor.TryDecode(builder.CursorString.AsSpan(), definition, out var values, out var metadata))
+                throw new ArgumentException("Invalid or expired cursor.");
+            return new ResolvedContext<T>(
+                source.Paginate(definition, direction, values),
+                metadata.SortBy, metadata.TotalCount, HasInitialReference: true);
         }
 
-        return PaginationCursor.Encode(values, options);
+        if (!builder.BoundValues.IsEmpty)
+            return new ResolvedContext<T>(
+                source.Paginate(definition, direction, builder.BoundValues),
+                null, null, HasInitialReference: true);
+
+        if (builder.Reference is not null)
+            return new ResolvedContext<T>(
+                source.Paginate(definition, direction, builder.Reference),
+                null, null, HasInitialReference: true);
+
+        return new ResolvedContext<T>(
+            source.Paginate(definition, direction),
+            null, null, HasInitialReference: false);
     }
 }

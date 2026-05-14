@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
+using System.Reflection;
 
 namespace EFPagination.Internal;
 
@@ -11,14 +12,14 @@ namespace EFPagination.Internal;
 internal static class AdaptingExpressionVisitor
 {
     /// <summary>
-    /// Rebinds a lambda's parameter to <paramref name="newParameter"/>, returning a new lambda
-    /// whose body accesses the new parameter instead of the original.
+    /// Rebinds a lambda's single parameter to <paramref name="newParameter"/>, producing an
+    /// equivalent lambda whose body references the new parameter at every occurrence of the old one.
     /// </summary>
-    /// <typeparam name="T">The entity type.</typeparam>
-    /// <typeparam name="TColumn">The column value type.</typeparam>
-    /// <param name="expression">The original lambda expression.</param>
-    /// <param name="newParameter">The new parameter to substitute in.</param>
-    /// <returns>A new lambda expression bound to <paramref name="newParameter"/>.</returns>
+    /// <typeparam name="T">The original parameter type.</typeparam>
+    /// <typeparam name="TColumn">The lambda body type.</typeparam>
+    /// <param name="expression">The source lambda.</param>
+    /// <param name="newParameter">The new parameter expression to substitute.</param>
+    /// <returns>A lambda with <paramref name="newParameter"/> in place of the original parameter.</returns>
     public static Expression<Func<T, TColumn>> AdaptParameter<T, TColumn>(
         Expression<Func<T, TColumn>> expression,
         ParameterExpression newParameter)
@@ -26,22 +27,21 @@ internal static class AdaptingExpressionVisitor
         Debug.Assert(expression.Parameters.Count == 1);
 
         var visitor = new ParameterAdaptingExpressionVisitor<T, TColumn>(
-            expression.Parameters[0],
-            newParameter);
+            expression.Parameters[0], newParameter);
         var newBody = visitor.Visit(expression.Body);
         return Expression.Lambda<Func<T, TColumn>>(newBody, [newParameter]);
     }
 
     /// <summary>
-    /// Adapts a lambda to accept an <see cref="object"/> parameter and access equivalent properties
-    /// on <paramref name="newType"/> via loose typing rules. The resulting lambda casts the input
-    /// to the target type and maps the property chain accordingly.
+    /// Adapts a lambda to accept an <see cref="object"/> parameter and access equivalent
+    /// properties on <paramref name="newType"/> via loose-typing rules (matching property names).
     /// </summary>
     /// <typeparam name="T">The original entity type.</typeparam>
-    /// <typeparam name="TColumn">The column value type.</typeparam>
-    /// <param name="expression">The original lambda expression.</param>
-    /// <param name="newType">The actual runtime type of the reference object.</param>
-    /// <returns>A new lambda accepting <see cref="object"/> and accessing the mapped properties.</returns>
+    /// <typeparam name="TColumn">The lambda body type.</typeparam>
+    /// <param name="expression">The source lambda over <typeparamref name="T"/>.</param>
+    /// <param name="newType">The new reference type whose properties are accessed by name.</param>
+    /// <returns>A lambda over <see cref="object"/> that reads matching properties on <paramref name="newType"/>.</returns>
+    /// <exception cref="IncompatibleReferenceException"><paramref name="newType"/> is missing a property required by the source lambda.</exception>
     public static Expression<Func<object, TColumn>> AdaptType<T, TColumn>(
         Expression<Func<T, TColumn>> expression,
         Type newType)
@@ -50,73 +50,66 @@ internal static class AdaptingExpressionVisitor
 
         var newParameter = Expression.Parameter(typeof(object), expression.Parameters[0].Name);
         var visitor = new TypeAdaptingExpressionVisitor<T, TColumn>(
-            expression.Parameters[0],
-            newParameter,
-            newType);
+            expression.Parameters[0], newParameter, newType);
         var newBody = visitor.Visit(expression.Body);
         return Expression.Lambda<Func<object, TColumn>>(newBody, [newParameter]);
     }
 }
 
-/// <summary>
-/// Replaces occurrences of <paramref name="oldParameter"/> with <paramref name="newParameter"/>
-/// in an expression tree.
-/// </summary>
-/// <typeparam name="T">The entity type.</typeparam>
-/// <typeparam name="TColumn">The column value type.</typeparam>
 internal class ParameterAdaptingExpressionVisitor<T, TColumn>(
     ParameterExpression oldParameter,
     ParameterExpression newParameter) : ExpressionVisitor
 {
-    /// <summary>
-    /// The original parameter being replaced.
-    /// </summary>
     protected ParameterExpression OldParameter { get; } = oldParameter;
 
-    /// <inheritdoc />
-    protected override Expression VisitParameter(ParameterExpression node) => node == OldParameter ? newParameter : node;
+    protected override Expression VisitParameter(ParameterExpression node)
+        => node == OldParameter ? newParameter : node;
 }
 
-/// <summary>
-/// Extends <see cref="ParameterAdaptingExpressionVisitor{T, TColumn}"/> to also remap
-/// member access chains to equivalent properties on a different type. Supports loose typing
-/// where the reference object is not the same type as the entity.
-/// </summary>
-/// <typeparam name="T">The original entity type.</typeparam>
-/// <typeparam name="TColumn">The column value type.</typeparam>
 internal sealed class TypeAdaptingExpressionVisitor<T, TColumn>(
     ParameterExpression oldParameter,
     ParameterExpression newParameter,
     Type? newType) : ParameterAdaptingExpressionVisitor<T, TColumn>(oldParameter, newParameter)
 {
-    /// <inheritdoc />
     protected override Expression VisitMember(MemberExpression node)
     {
         if (newType is null)
-        {
             return base.VisitMember(node);
+
+        // Walk the chain to its root. Skip remapping when the root isn't the original parameter
+        // (e.g. static field/property like DateTime.MinValue terminates at a null Expression).
+        var depth = 0;
+        Expression? cursor = node;
+        while (cursor is MemberExpression cm)
+        {
+            depth++;
+            cursor = cm.Expression;
         }
 
-        var startingExpression = ExpressionHelper.GetStartingExpression(node);
-        if (startingExpression != OldParameter)
-        {
+        if (cursor != OldParameter)
             return base.VisitMember(node);
+
+        // Collect properties in root-to-leaf order. Only property accesses are valid past this point.
+        var properties = new PropertyInfo[depth];
+        cursor = node;
+        var idx = depth - 1;
+        while (cursor is MemberExpression cm)
+        {
+            properties[idx--] = cm.Member as PropertyInfo
+                ?? throw new InvalidOperationException("Pagination column member-access chain must contain only properties.");
+            cursor = cm.Expression;
         }
 
-        var currentReplacementExpression = (Expression)Expression.Convert(Visit(startingExpression), newType);
-        var properties = ExpressionHelper.GetPropertyChain(node);
-
+        // Build the rebound member-access chain on the new parameter type.
+        var replacement = (Expression)Expression.Convert(Visit(OldParameter), newType);
         foreach (var property in properties)
         {
-            var accessor = Accessor.Obtain(currentReplacementExpression.Type);
-            if (!accessor.TryGetProperty(property.Name, out var newProperty))
-            {
-                ThrowIncompatibleObject(property.Name, currentReplacementExpression.Type);
-            }
-            currentReplacementExpression = Expression.MakeMemberAccess(currentReplacementExpression, newProperty);
+            if (!AccessorCache.TryGetProperty(replacement.Type, property.Name, out var newProperty))
+                ThrowIncompatibleObject(property.Name, replacement.Type);
+            replacement = Expression.MakeMemberAccess(replacement, newProperty);
         }
 
-        return currentReplacementExpression;
+        return replacement;
     }
 
     [DoesNotReturn]

@@ -32,7 +32,7 @@ public static class KeysetBuilderAspNetExtensions
     /// </summary>
     /// <typeparam name="T">The entity type.</typeparam>
     /// <param name="source">The base <see cref="IQueryable{T}"/>.</param>
-    /// <param name="registry">The sort registry for resolving the definition.</param>
+    /// <param name="registry">The sort registry for resolving the definition from <see cref="PaginationRequest.SortBy"/>.</param>
     /// <param name="request">The pagination request with sort and cursor parameters.</param>
     /// <returns>A <see cref="KeysetQueryBuilder{T}"/> configured from the registry and request.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="registry"/> is <see langword="null"/>.</exception>
@@ -44,19 +44,9 @@ public static class KeysetBuilderAspNetExtensions
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(registry);
 
-        var definition = registry.Resolve(
-            request.SortBy.AsSpan(),
-            request.SortDir.AsSpan());
-
-        var builder = new KeysetQueryBuilder<T>(source, definition)
-            .WithSortBy(request.SortBy);
-
-        if (request.Before is not null)
-            return builder.Before(request.Before);
-
-        if (request.After is not null)
-            return builder.After(request.After);
-
-        return builder;
+        var definition = registry.Resolve(request.SortBy.AsSpan(), request.SortDir.AsSpan());
+        return new KeysetQueryBuilder<T>(source, definition)
+            .WithSortBy(request.SortBy)
+            .FromRequest(request);
     }
 }

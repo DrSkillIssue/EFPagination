@@ -81,7 +81,7 @@ var page = await dbContext.Users
 If you decoded cursor values into a `PaginationValues<T>`, pass them directly:
 
 ```cs
-if (PaginationCursor.TryDecode(cursorString, Definition, out var values, out _))
+if (PaginationCursor.TryDecode(cursorString, Definition, out var values, out var metadata))
 {
     var page = await dbContext.Users
         .Keyset(Definition)
@@ -89,6 +89,62 @@ if (PaginationCursor.TryDecode(cursorString, Definition, out var values, out _))
         .TakeAsync(20);
 }
 ```
+
+The `metadata` (`CursorMetadata`) exposes any `SortBy`, `TotalCount`, and schema `Fingerprint` that were embedded in the cursor.
+
+## Server-Side Projection
+
+Pass an `Expression<Func<T, TOut>>` to `TakeAsync` or `StreamAsync` to project to a DTO **inside the SQL statement** that applies the keyset `ORDER BY`. The SELECT list materializes only the projected columns plus the keyset key columns; subqueries inside the selector stay server-side.
+
+```cs
+public sealed record UserListItem(int Id, string Name, string Email, DateTime Created);
+
+var page = await dbContext.Users
+    .Keyset(Definition)
+    .After(cursor)
+    .TakeAsync(20, u => new UserListItem(u.Id, u.Name, u.Email, u.Created));
+```
+
+The returned `CursorPage<UserListItem>` carries cursor tokens just like the entity-typed overload — the keyset key values ride alongside the projection in an internal envelope and feed cursor encoding without ever touching the projected DTO. This means **the DTO does not need property names matching the pagination definition** (see [Loose Typing](loose-typing.md)).
+
+### Server-Side Subqueries
+
+Subqueries embedded in the projection translate as correlated subqueries / `OUTER APPLY` instead of producing N+1 round trips:
+
+```cs
+public sealed record AccountListItem(
+    Guid Id, string UserName, string[] Roles, DateTime Created);
+
+var page = await dbContext.Accounts
+    .Keyset(AccountsDefinition)
+    .FromRequest(request)
+    .TakeAsync(request.PageSize, a => new AccountListItem(
+        a.Id,
+        a.UserName,
+        dbContext.Set<UserRole>()
+            .Where(ur => ur.UserId == a.Id)
+            .Join(dbContext.Set<Role>(), ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
+            .OrderBy(n => n)
+            .ToArray(),
+        a.Created));
+```
+
+### Streaming with Projection
+
+`StreamAsync<TOut>` yields projected batches end-to-end:
+
+```cs
+await foreach (var batch in dbContext.Users.Keyset(Definition)
+    .StreamAsync(500, u => new UserListItem(u.Id, u.Name, u.Email, u.Created)))
+{
+    foreach (var item in batch)
+        ProcessItem(item);
+}
+```
+
+### Limits
+
+The projection path supports 1–8 keyset key columns. Definitions outside that range throw `NotSupportedException` when the projected overload is invoked. The entity-typed `TakeAsync` / `StreamAsync` overloads have no such limit.
 
 ## Streaming All Pages
 
@@ -185,27 +241,33 @@ The `Keyset(registry, request)` overload resolves the definition from `request.S
 
 ## Manual Cursor Encode/Decode
 
-If you need custom metadata or HMAC signing on cursors:
+Cursor encoding is schema-bound: both `Encode` and `TryDecode` take a `PaginationQueryDefinition<T>` and infer types from it. Use this when you need custom metadata (logical sort key, total count) or HMAC signing on cursors outside the fluent builder:
 
 ```cs
 private static readonly byte[] CursorKey = RandomNumberGenerator.GetBytes(32);
 
-// Encode
+// Encode from an entity (or DTO with matching property names):
 var cursorToken = PaginationCursor.Encode(
-[
-    new ColumnValue(nameof(User.Created), lastUser.Created),
-    new ColumnValue(nameof(User.Id), lastUser.Id),
-],
-new PaginationCursorOptions(SigningKey: CursorKey));
+    Definition,
+    lastUser,
+    new PaginationCursorOptions(SigningKey: CursorKey));
 
-// Decode
-if (PaginationCursor.TryDecode(cursorToken, Definition, out var values, out _))
+// Decode: returns PaginationValues<T> plus header metadata in one call.
+if (PaginationCursor.TryDecode(cursorToken, Definition, out var values, out var meta, CursorKey))
 {
+    // meta.SortBy / meta.TotalCount / meta.Fingerprint are populated when present in the payload.
     var page = await dbContext.Users
         .Keyset(Definition)
         .After(values)
         .TakeAsync(20);
 }
+```
+
+Or encode from pre-extracted values when you already have them in column order:
+
+```cs
+var values = PaginationValues<User>.Create(Definition, lastUser.Created, lastUser.Id);
+var cursorToken = PaginationCursor.Encode(Definition, values, new PaginationCursorOptions(SigningKey: CursorKey));
 ```
 
 ## See Also

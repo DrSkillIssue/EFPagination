@@ -8,13 +8,32 @@ namespace EFPagination.Cursor;
 
 internal static class CursorDecoder
 {
-    [SkipLocalsInit]
     public static bool TryDecodeWithDefinition<T>(
         ReadOnlySpan<char> encoded,
         PaginationQueryDefinition<T> definition,
         ColumnBinding[] bindings,
         byte[]? signingKey,
         out CursorMetadata metadata)
+        => DecodeCore(encoded, signingKey, new DefinitionBody<T>(definition, bindings), out metadata);
+
+    public static bool TryDecodeTagged(
+        ReadOnlySpan<char> encoded,
+        Span<ColumnValue> values,
+        byte[]? signingKey,
+        out CursorMetadata metadata)
+        => DecodeCore(encoded, signingKey, new TaggedBody(values), out metadata);
+
+    /// <summary>
+    /// Shared decode envelope: buffer rental + base64url decode + header parse + body dispatch +
+    /// remaining-bytes sanity + metadata construction + malformed-cursor exception trapping.
+    /// </summary>
+    [SkipLocalsInit]
+    private static bool DecodeCore<TBody>(
+        ReadOnlySpan<char> encoded,
+        byte[]? signingKey,
+        scoped TBody body,
+        out CursorMetadata metadata)
+        where TBody : struct, IDecodeBody, allows ref struct
     {
         metadata = default;
         if (encoded.IsEmpty) return false;
@@ -36,22 +55,8 @@ internal static class CursorDecoder
 
             var reader = new CursorReader(payload.Slice(header.BodyStart, header.BodyEnd - header.BodyStart));
 
-            int valueCount;
-            if (header.SchemaBound)
-            {
-                if (!header.HasFingerprint || header.Fingerprint != definition.SchemaFingerprint)
-                    return false;
-                if (!DecodeSchemaBoundBody(ref reader, definition, bindings, out valueCount))
-                    return false;
-            }
-            else
-            {
-                if (header.HasFingerprint && header.Fingerprint != definition.SchemaFingerprint)
-                    return false;
-                if (!DecodeTaggedBodyIntoBindings(ref reader, definition, bindings, out valueCount))
-                    return false;
-            }
-
+            if (!body.TryDecode(ref reader, in header, out var valueCount))
+                return false;
             if (reader.Failed || reader.Remaining != 0)
                 return false;
 
@@ -71,52 +76,37 @@ internal static class CursorDecoder
         }
     }
 
-    [SkipLocalsInit]
-    public static bool TryDecodeTagged(
-        ReadOnlySpan<char> encoded,
-        Span<ColumnValue> values,
-        byte[]? signingKey,
-        out CursorMetadata metadata)
+    private interface IDecodeBody
     {
-        metadata = default;
-        if (encoded.IsEmpty) return false;
+        bool TryDecode(ref CursorReader reader, in ParsedHeader header, out int valueCount);
+    }
 
-        var maxLen = Base64Url.GetMaxDecodedLength(encoded.Length);
-        byte[]? rented = null;
-        Span<byte> scratch = maxLen <= 256
-            ? stackalloc byte[256]
-            : (rented = ArrayPool<byte>.Shared.Rent(maxLen));
-
-        try
+    private readonly ref struct DefinitionBody<T>(PaginationQueryDefinition<T> definition, ColumnBinding[] bindings) : IDecodeBody
+    {
+        public bool TryDecode(ref CursorReader reader, in ParsedHeader header, out int valueCount)
         {
-            if (!Base64Url.TryDecodeFromChars(encoded, scratch, out var bytesWritten))
-                return false;
+            if (header.SchemaBound)
+            {
+                if (!header.HasFingerprint || header.Fingerprint != definition.SchemaFingerprint)
+                { valueCount = 0; return false; }
+                return DecodeSchemaBoundBody(ref reader, definition, bindings, out valueCount);
+            }
 
-            var payload = scratch[..bytesWritten];
-            if (!ParseHeader(payload, signingKey, out var header) || header.SchemaBound)
-                return false;
-
-            var reader = new CursorReader(payload.Slice(header.BodyStart, header.BodyEnd - header.BodyStart));
-
-            if (!DecodeTaggedBodyIntoColumnValues(ref reader, values, out var valueCount))
-                return false;
-
-            if (reader.Failed || reader.Remaining != 0)
-                return false;
-
-            metadata = new CursorMetadata(
-                header.SortBy,
-                header.TotalCount,
-                header.HasFingerprint ? header.Fingerprint : null,
-                valueCount);
-            return true;
+            if (header.HasFingerprint && header.Fingerprint != definition.SchemaFingerprint)
+            { valueCount = 0; return false; }
+            return DecodeTaggedBodyIntoBindings(ref reader, definition, bindings, out valueCount);
         }
-        catch (FormatException) { return false; }
-        catch (InvalidOperationException) { return false; }
-        catch (InvalidCastException) { return false; }
-        finally
+    }
+
+    private readonly ref struct TaggedBody : IDecodeBody
+    {
+        private readonly Span<ColumnValue> _values;
+        public TaggedBody(Span<ColumnValue> values) { _values = values; }
+
+        public bool TryDecode(ref CursorReader reader, in ParsedHeader header, out int valueCount)
         {
-            if (rented is not null) ArrayPool<byte>.Shared.Return(rented);
+            if (header.SchemaBound) { valueCount = 0; return false; }
+            return DecodeTaggedBodyIntoColumnValues(ref reader, _values, out valueCount);
         }
     }
 

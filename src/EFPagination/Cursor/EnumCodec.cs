@@ -51,22 +51,19 @@ internal sealed class NullableEnumCodec<TEnum> : ColumnCodec<TEnum?>
     public override TEnum? Read(ref CursorReader reader) => _inner.Read(ref reader);
 }
 
+/// <summary>
+/// Lazy factory for closed-generic enum codecs (with optional <see cref="Nullable{T}"/> wrapping).
+/// </summary>
 internal static class EnumCodecFactory
 {
-    private static readonly ConcurrentDictionary<Type, ColumnCodec> s_cache = new();
+    private static readonly ConcurrentDictionary<(Type Underlying, bool Nullable), ColumnCodec> s_cache = new();
 
-    public static ColumnCodec Create(Type enumType)
-        => s_cache.GetOrAdd(enumType, static t =>
-            (ColumnCodec)Activator.CreateInstance(typeof(EnumCodec<>).MakeGenericType(t))!);
-}
-
-internal static class NullableEnumCodecFactory
-{
-    private static readonly ConcurrentDictionary<Type, ColumnCodec> s_cache = new();
-
-    public static ColumnCodec Create(Type enumType)
-        => s_cache.GetOrAdd(enumType, static t =>
-            (ColumnCodec)Activator.CreateInstance(typeof(NullableEnumCodec<>).MakeGenericType(t))!);
+    public static ColumnCodec Create(Type enumType, bool nullable = false)
+        => s_cache.GetOrAdd((enumType, nullable), static key =>
+        {
+            var open = key.Nullable ? typeof(NullableEnumCodec<>) : typeof(EnumCodec<>);
+            return (ColumnCodec)Activator.CreateInstance(open.MakeGenericType(key.Underlying))!;
+        });
 }
 
 internal static class EnumTypeRegistry

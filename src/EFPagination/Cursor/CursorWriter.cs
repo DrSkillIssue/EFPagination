@@ -21,6 +21,19 @@ internal ref struct CursorWriter
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly void SetBit(int byteOffset, int bitIndex) => _buffer.SetBit(byteOffset, bitIndex);
 
+    /// <summary>
+    /// Reserves <paramref name="byteCount"/> zeroed bytes and returns the buffer offset where
+    /// the region starts (used as the null-bitmap region in schema-bound encoding).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int ReserveZeros(int byteCount)
+    {
+        var start = Position;
+        _buffer.GetSpan(byteCount)[..byteCount].Clear();
+        _buffer.Advance(byteCount);
+        return start;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteByte(byte value)
     {

@@ -82,7 +82,6 @@ Internal/
  CachedPredicateTemplate.cs
  ColumnBinding.cs
  CursorPair.cs
- ExpressionHelper.cs
  FastLambda.cs
  FilterPredicateStrategy.cs
  KeysetQueryExecutor.cs

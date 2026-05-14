@@ -66,11 +66,7 @@ internal static class ColumnCodecRegistry
         var underlying = Nullable.GetUnderlyingType(typeof(TKey)) ?? typeof(TKey);
 
         if (underlying.IsEnum)
-        {
-            return typeof(TKey) == underlying
-                ? (ColumnCodec<TKey>)EnumCodecFactory.Create(underlying)
-                : (ColumnCodec<TKey>)NullableEnumCodecFactory.Create(underlying);
-        }
+            return (ColumnCodec<TKey>)EnumCodecFactory.Create(underlying, nullable: typeof(TKey) != underlying);
 
         if (s_tables.ByType.TryGetValue(typeof(TKey), out var direct))
             return (ColumnCodec<TKey>)direct;

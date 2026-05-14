@@ -65,11 +65,6 @@ internal abstract class PaginationColumn<T>(
     public abstract bool IsNullable { get; }
 
     /// <summary>
-    /// The runtime codec used to write/read this column's value to/from a binary cursor payload.
-    /// </summary>
-    public abstract ColumnCodec Codec { get; }
-
-    /// <summary>
     /// Writes this column's value to the cursor by extracting it from <paramref name="reference"/>
     /// via the cached typed accessor. Returns <see langword="false"/> when the extracted value is
     /// <see langword="null"/> so the caller can record the null bit in a bitmap.
@@ -153,6 +148,7 @@ internal abstract class PaginationColumn<T>(
         });
     }
 
+    // Caller (ResolvePropertyName) already validated every chain member is a PropertyInfo.
     private static int WritePropertyPath(Span<char> destination, MemberExpression memberExpression, int position)
     {
         if (memberExpression.Expression is MemberExpression parent)
@@ -161,11 +157,9 @@ internal abstract class PaginationColumn<T>(
             destination[position++] = '.';
         }
 
-        var property = memberExpression.Member as PropertyInfo
-            ?? throw new InvalidOperationException("Pagination column member-access chain must contain only properties.");
-
-        property.Name.AsSpan().CopyTo(destination[position..]);
-        return position + property.Name.Length;
+        var name = ((PropertyInfo)memberExpression.Member).Name;
+        name.AsSpan().CopyTo(destination[position..]);
+        return position + name.Length;
     }
 }
 
@@ -194,8 +188,6 @@ internal sealed class PaginationColumn<T, TColumn>(
     public new Expression<Func<T, TColumn>> LambdaExpression => (Expression<Func<T, TColumn>>)base.LambdaExpression;
 
     public override bool IsNullable => s_isColumnNullable;
-
-    public override ColumnCodec Codec => s_codec;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override Expression MakeAccessExpression(ParameterExpression parameter) => AdaptingExpressionVisitor.AdaptParameter(LambdaExpression, parameter).Body;

@@ -49,7 +49,8 @@ public class TryResolveAndCacheBoundsTests
     [Fact]
     public void PaginationValues_Create_ProducesUsableInstance()
     {
-        var values = PaginationValues<MainModel>.Create(42);
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var values = PaginationValues<MainModel>.Create(definition, 42);
 
         values.Count.Should().Be(1);
     }

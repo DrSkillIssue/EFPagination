@@ -58,12 +58,12 @@ public class PaginationCursorIntegrationTests
         var encoded = PaginationCursor.Encode(values, new PaginationCursorOptions("created", 99));
 
         var decoded = values.Select(x => new ColumnValue(x.Name, null)).ToArray();
-        var success = PaginationCursor.TryDecode(encoded, decoded, out var written, out var sortBy, out var totalCount);
+        var success = PaginationCursor.TryDecode(encoded, decoded, out var metadata);
 
         success.Should().BeTrue();
-        written.Should().Be(values.Length);
-        sortBy.Should().Be("created");
-        totalCount.Should().Be(99);
+        metadata.ValueCount.Should().Be(values.Length);
+        metadata.SortBy.Should().Be("created");
+        metadata.TotalCount.Should().Be(99);
 
         for (var i = 0; i < values.Length; i++)
         {
@@ -95,10 +95,10 @@ public class PaginationCursorIntegrationTests
         var encoded = PaginationCursor.Encode(values);
         var decoded = new[] { new ColumnValue("Duration", null) };
 
-        var success = PaginationCursor.TryDecode(encoded, decoded, out var written);
+        var success = PaginationCursor.TryDecode(encoded, decoded, out var metadata);
 
         success.Should().BeTrue();
-        written.Should().Be(1);
+        metadata.ValueCount.Should().Be(1);
         decoded[0].Value.Should().Be(duration);
         decoded[0].Value.Should().BeOfType<TimeSpan>();
     }
@@ -131,12 +131,12 @@ public class PaginationCursorIntegrationTests
         ],
         new PaginationCursorOptions("created", firstPage.TotalCount));
 
-        var success = PaginationCursor.TryDecode(cursor, definition, out var decoded, out var written, out var sortBy, out var totalCount);
+        var success = PaginationCursor.TryDecode(cursor, definition, out var decoded, out var metadata);
 
         success.Should().BeTrue();
-        written.Should().Be(2);
-        sortBy.Should().Be("created");
-        totalCount.Should().Be(firstPage.TotalCount);
+        metadata.ValueCount.Should().Be(2);
+        metadata.SortBy.Should().Be("created");
+        metadata.TotalCount.Should().Be(firstPage.TotalCount);
 
         var secondPage = await _dbContext.MainModels
             .Paginate(definition, PaginationDirection.Forward, decoded).Query
@@ -161,7 +161,7 @@ public class PaginationCursorIntegrationTests
         new PaginationCursorOptions("created", firstPage.TotalCount));
 
         var tamperedCursor = TamperCursorJson(validCursor, static json => json.Replace("\"c\":99", "\"c\":99}[]", StringComparison.Ordinal));
-        PaginationCursor.TryDecode(tamperedCursor, definition, out PaginationValues<MainModel> _, out _, out _, out _).Should().BeFalse();
+        PaginationCursor.TryDecode(tamperedCursor, definition, out PaginationValues<MainModel> _, out _).Should().BeFalse();
     }
 
     [Fact]
@@ -176,10 +176,10 @@ public class PaginationCursorIntegrationTests
             new ColumnValue(nameof(MainModel.Id), lastItem.Id),
         ]);
 
-        var success = PaginationCursor.TryDecode(cursor, definition, out var values, out var written);
+        var success = PaginationCursor.TryDecode(cursor, definition, out var values, out var metadata);
 
         success.Should().BeTrue();
-        written.Should().Be(2);
+        metadata.ValueCount.Should().Be(2);
 
         var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, new ExecutionOptions(PageSize: 10), values);
 
@@ -193,10 +193,10 @@ public class PaginationCursorIntegrationTests
         var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.CreatedNullable ?? DateTime.MinValue).Ascending(x => x.Id));
         var cursor = PaginationCursor.Encode([new ColumnValue("CreatedNullable", DateTime.MinValue), new ColumnValue(nameof(MainModel.Id), 10)]);
 
-        var success = PaginationCursor.TryDecode(cursor, definition, out var values, out var written);
+        var success = PaginationCursor.TryDecode(cursor, definition, out var values, out var metadata);
 
         success.Should().BeTrue();
-        written.Should().Be(2);
+        metadata.ValueCount.Should().Be(2);
 
         var page = await PaginationExecutor.ExecuteAsync(_dbContext.MainModels, definition, new ExecutionOptions(PageSize: 10), values);
 

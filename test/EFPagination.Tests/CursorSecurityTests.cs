@@ -15,10 +15,10 @@ public class CursorSecurityTests
             new PaginationCursorOptions(SigningKey: key));
 
         var values = new ColumnValue[] { new("Id", null), new("Name", null) };
-        var success = PaginationCursor.TryDecode(cursor, values, out var written, signingKey: key);
+        var success = PaginationCursor.TryDecode(cursor, values, out var metadata, signingKey: key);
 
         success.Should().BeTrue();
-        written.Should().Be(2);
+        metadata.ValueCount.Should().Be(2);
         values[0].Value.Should().Be(42);
         values[1].Value.Should().Be("test");
     }
@@ -62,10 +62,10 @@ public class CursorSecurityTests
         var cursor = PaginationCursor.Encode([new ColumnValue("Id", 42)]);
 
         var values = new ColumnValue[] { new("Id", null) };
-        var success = PaginationCursor.TryDecode(cursor, values, out var written);
+        var success = PaginationCursor.TryDecode(cursor, values, out var metadata);
 
         success.Should().BeTrue();
-        written.Should().Be(1);
+        metadata.ValueCount.Should().Be(1);
     }
 
     [Fact]

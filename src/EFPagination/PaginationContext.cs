@@ -24,19 +24,13 @@ public readonly struct PaginationContext<T>
         PredicateTemplate = predicateTemplate;
     }
 
-    /// <summary>
-    /// Gets the final query with both ordering and pagination filtering applied.
-    /// </summary>
+    /// <summary>The final query with both ordering and pagination filtering applied.</summary>
     public IQueryable<T> Query { get; }
 
-    /// <summary>
-    /// Gets the query with only ordering applied (no pagination filter predicate).
-    /// </summary>
+    /// <summary>The query with only ordering applied (no pagination filter predicate).</summary>
     public IQueryable<T> OrderedQuery { get; }
 
-    /// <summary>
-    /// Gets the pagination direction that was used to create this context.
-    /// </summary>
+    /// <summary>The pagination direction that was used to create this context.</summary>
     public PaginationDirection Direction { get; }
 
     internal PaginationColumn<T>[] Columns { get; }

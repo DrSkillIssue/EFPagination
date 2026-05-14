@@ -14,7 +14,7 @@ public sealed class PaginationQueryDefinition<T>
         PaginationColumn<T>[] columns)
     {
         Columns = columns;
-        PredicateTemplate = FilterPredicateStrategy.Default.CreateTemplate(columns);
+        PredicateTemplate = FilterPredicateStrategy.CreateTemplate(columns);
         SchemaFingerprint = ComputeFingerprint(columns);
     }
 

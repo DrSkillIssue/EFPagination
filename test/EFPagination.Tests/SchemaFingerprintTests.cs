@@ -14,10 +14,10 @@ public class SchemaFingerprintTests
             [new ColumnValue("Id", 10)],
             new PaginationCursorOptions(SchemaFingerprint: def.SchemaFingerprint));
 
-        var success = PaginationCursor.TryDecode(cursor, def, out var values, out var written);
+        var success = PaginationCursor.TryDecode(cursor, def, out var values, out var metadata);
 
         success.Should().BeTrue();
-        written.Should().Be(1);
+        metadata.ValueCount.Should().Be(1);
     }
 
     [Fact]

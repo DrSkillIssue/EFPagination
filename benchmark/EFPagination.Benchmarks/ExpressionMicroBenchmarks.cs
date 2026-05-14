@@ -1,5 +1,4 @@
 using System.Linq.Expressions;
-using System.Reflection;
 using BenchmarkDotNet.Attributes;
 using EFPagination.Internal;
 
@@ -9,40 +8,29 @@ namespace EFPagination.Benchmarks;
 [ShortRunJob]
 public class ExpressionMicroBenchmarks
 {
-    private static readonly FieldInfo s_valueField = typeof(ValueHolder).GetField("Value")!;
     private static readonly ParameterExpression s_entityParam = Expression.Parameter(typeof(BenchmarkEntity), "entity");
     private static readonly MemberExpression s_idAccess = Expression.Property(s_entityParam, nameof(BenchmarkEntity.Id));
 
-    private ValueHolder _holder = null!;
-    private ConstantExpression _constant = null!;
-    private MemberExpression _fieldAccess = null!;
-    private UnaryExpression _convert = null!;
+    private ColumnBinding<int> _binding = null!;
+    private Expression _fieldAccess = null!;
     private BinaryExpression _gt = null!;
 
     [GlobalSetup]
     public void Setup()
     {
-        _holder = new ValueHolder { Value = 500 };
-        _constant = Expression.Constant(_holder);
-        _fieldAccess = Expression.Field(_constant, s_valueField);
-        _convert = Expression.Convert(_fieldAccess, typeof(int));
-        _gt = Expression.GreaterThan(s_idAccess, _convert);
+        _binding = new ColumnBinding<int> { Value = 500 };
+        _fieldAccess = _binding.CreateValueAccessExpression();
+        _gt = Expression.GreaterThan(s_idAccess, _fieldAccess);
     }
 
     [Benchmark]
-    public object AllocValueHolder() => new ValueHolder { Value = 500 };
+    public object AllocBinding() => new ColumnBinding<int> { Value = 500 };
 
     [Benchmark]
-    public ConstantExpression AllocConstant() => Expression.Constant(new ValueHolder { Value = 500 });
+    public Expression AllocFieldAccess() => _binding.CreateValueAccessExpression();
 
     [Benchmark]
-    public MemberExpression AllocField() => Expression.Field(_constant, s_valueField);
-
-    [Benchmark]
-    public UnaryExpression AllocConvert() => Expression.Convert(_fieldAccess, typeof(int));
-
-    [Benchmark]
-    public BinaryExpression AllocGT() => Expression.GreaterThan(s_idAccess, _convert);
+    public BinaryExpression AllocGT() => Expression.GreaterThan(s_idAccess, _fieldAccess);
 
     [Benchmark]
     public Expression<Func<BenchmarkEntity, bool>> AllocLambda()
@@ -51,11 +39,9 @@ public class ExpressionMicroBenchmarks
     [Benchmark]
     public Expression<Func<BenchmarkEntity, bool>> FullChain()
     {
-        var holder = new ValueHolder { Value = 500 };
-        var constant = Expression.Constant(holder);
-        var field = Expression.Field(constant, s_valueField);
-        var convert = Expression.Convert(field, typeof(int));
-        var gt = Expression.GreaterThan(s_idAccess, convert);
+        var binding = new ColumnBinding<int> { Value = 500 };
+        var field = binding.CreateValueAccessExpression();
+        var gt = Expression.GreaterThan(s_idAccess, field);
         return Expression.Lambda<Func<BenchmarkEntity, bool>>(gt, s_entityParam);
     }
 }

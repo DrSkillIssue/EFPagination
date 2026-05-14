@@ -27,7 +27,7 @@ internal static class QueryableMethods
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static IQueryable<T> ApplyWhere<T>(IQueryable<T> source, Expression<Func<T, bool>> predicate)
     {
-        var call = FastExpressions.Call(Where<T>.Method, source.Expression, FastExpressions.Quote(predicate));
+        var call = Expression.Call(Where<T>.Method, source.Expression, Expression.Quote(predicate));
         return source.Provider.CreateQuery<T>(call);
     }
 }

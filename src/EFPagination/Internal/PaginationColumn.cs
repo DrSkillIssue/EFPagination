@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using EFPagination.Cursor;
 
 namespace EFPagination.Internal;
 
@@ -58,13 +60,58 @@ internal abstract class PaginationColumn<T>(
     public abstract IOrderedQueryable<T> ApplyThenOrderBy(IOrderedQueryable<T> query, PaginationDirection direction);
 
     /// <summary>
-    /// Extracts this column's value from a reference object, supporting loose typing
-    /// (the reference does not need to be of type <typeparamref name="T"/>).
+    /// Whether this column's value can legitimately be <see langword="null"/>.
     /// </summary>
-    /// <typeparam name="TReference">The type of the reference object.</typeparam>
-    /// <param name="reference">The reference object to extract the value from.</param>
-    /// <returns>The boxed column value.</returns>
-    public abstract object ObtainValue<TReference>(TReference reference);
+    public abstract bool IsNullable { get; }
+
+    /// <summary>
+    /// The runtime codec used to write/read this column's value to/from a binary cursor payload.
+    /// </summary>
+    public abstract ColumnCodec Codec { get; }
+
+    /// <summary>
+    /// Writes this column's value to the cursor by extracting it from <paramref name="reference"/>
+    /// via the cached typed accessor. Returns <see langword="false"/> when the extracted value is
+    /// <see langword="null"/> so the caller can record the null bit in a bitmap.
+    /// </summary>
+    public abstract bool TryWriteCursorValueFromReference(object reference, ref CursorWriter writer);
+
+    /// <summary>
+    /// Writes a binding's typed value to the cursor without boxing. Returns
+    /// <see langword="false"/> when the binding holds a <see langword="null"/> reference / default
+    /// nullable, so the caller can record the null bit.
+    /// </summary>
+    public abstract bool TryWriteCursorValueFromBinding(ColumnBinding binding, ref CursorWriter writer);
+
+    /// <summary>
+    /// Allocates a fresh typed <see cref="ColumnBinding"/> for this column.
+    /// </summary>
+    public abstract ColumnBinding CreateBinding();
+
+    /// <summary>
+    /// Reads this column's typed value from the cursor and stores it in <paramref name="binding"/>
+    /// without intermediate boxing.
+    /// </summary>
+    public abstract void DecodeCursorValueInto(ref CursorReader reader, ColumnBinding binding);
+
+    /// <summary>
+    /// Decodes a tagged-format value directly into <paramref name="binding"/> without the
+    /// boxed-<see cref="object"/> round-trip. Returns <see langword="false"/> if the encoded kind
+    /// does not match the column's expected codec or the cursor is malformed.
+    /// </summary>
+    public abstract bool TryDecodeTaggedValueInto(ref CursorReader reader, byte kind, ColumnBinding binding);
+
+    /// <summary>
+    /// Writes <paramref name="binding"/>'s value from a boxed value. Used when the source value
+    /// arrived already boxed (e.g. <see cref="ColumnValue.Value"/> or the legacy object[] shape).
+    /// </summary>
+    public abstract void WriteBindingFromBoxed(object? boxed, ColumnBinding binding);
+
+    /// <summary>
+    /// Extracts this column's value from <paramref name="reference"/> and stores it in
+    /// <paramref name="binding"/> typed, without boxing.
+    /// </summary>
+    public abstract void WriteBindingFromReference(object reference, ColumnBinding binding);
 
     public string GetRequiredPropertyNameForColumnValues()
     {
@@ -136,6 +183,8 @@ internal sealed class PaginationColumn<T, TColumn>(
     private static readonly MethodInfo s_orderByDesc = QueryableMethods.Get(nameof(Queryable.OrderByDescending), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
     private static readonly MethodInfo s_thenBy = QueryableMethods.Get(nameof(Queryable.ThenBy), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
     private static readonly MethodInfo s_thenByDesc = QueryableMethods.Get(nameof(Queryable.ThenByDescending), 2).MakeGenericMethod(typeof(T), typeof(TColumn));
+    private static readonly bool s_isColumnNullable = !typeof(TColumn).IsValueType || Nullable.GetUnderlyingType(typeof(TColumn)) is not null;
+    private static readonly ColumnCodec<TColumn> s_codec = ColumnCodecRegistry.Resolve<TColumn>();
 
     private readonly ConcurrentDictionary<Type, Func<object, TColumn>> _referenceTypeToCompiledAccessMap = new();
     private volatile Type? _lastAccessType;
@@ -143,6 +192,10 @@ internal sealed class PaginationColumn<T, TColumn>(
     private Expression<Func<T, TColumn>>? _cachedOrderByLambda;
 
     public new Expression<Func<T, TColumn>> LambdaExpression => (Expression<Func<T, TColumn>>)base.LambdaExpression;
+
+    public override bool IsNullable => s_isColumnNullable;
+
+    public override ColumnCodec Codec => s_codec;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override Expression MakeAccessExpression(ParameterExpression parameter) => AdaptingExpressionVisitor.AdaptParameter(LambdaExpression, parameter).Body;
@@ -171,24 +224,28 @@ internal sealed class PaginationColumn<T, TColumn>(
     private IOrderedQueryable<T> ApplyDirect(IQueryable<T> query, MethodInfo method)
     {
         var lambda = GetOrderByLambda();
-        var call = FastExpressions.Call(method, query.Expression, FastExpressions.Quote(lambda));
+        var call = Expression.Call(method, query.Expression, Expression.Quote(lambda));
         return (IOrderedQueryable<T>)query.Provider.CreateQuery<T>(call);
     }
 
-    /// <inheritdoc />
-    public override object ObtainValue<TReference>(TReference reference)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private TColumn ObtainValueTyped(object reference)
     {
-        ArgumentNullException.ThrowIfNull(reference);
-
         var referenceType = reference.GetType();
 
         var lastType = _lastAccessType;
         var lastFunc = _lastAccessFunc;
         if (lastType == referenceType && lastFunc is not null)
         {
-            return lastFunc(reference)!;
+            return lastFunc(reference);
         }
 
+        return ResolveAccessor(referenceType)(reference);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private Func<object, TColumn> ResolveAccessor(Type referenceType)
+    {
         var compiledAccess = _referenceTypeToCompiledAccessMap.GetOrAdd(
             referenceType,
             static (type, lambdaExpr) =>
@@ -200,6 +257,99 @@ internal sealed class PaginationColumn<T, TColumn>(
 
         _lastAccessType = referenceType;
         _lastAccessFunc = compiledAccess;
-        return compiledAccess(reference)!;
+        return compiledAccess;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override bool TryWriteCursorValueFromReference(object reference, ref CursorWriter writer)
+    {
+        var value = ObtainValueTyped(reference);
+        if (default(TColumn) is null && value is null)
+            return false;
+        s_codec.Write(ref writer, value);
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override bool TryWriteCursorValueFromBinding(ColumnBinding binding, ref CursorWriter writer)
+    {
+        var value = Unsafe.As<ColumnBinding<TColumn>>(binding).Value;
+        if (default(TColumn) is null && value is null)
+            return false;
+        s_codec.Write(ref writer, value);
+        return true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override ColumnBinding CreateBinding() => new ColumnBinding<TColumn>();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override void DecodeCursorValueInto(ref CursorReader reader, ColumnBinding binding)
+    {
+        Unsafe.As<ColumnBinding<TColumn>>(binding).Value = s_codec.Read(ref reader);
+    }
+
+    private static readonly byte[]? s_enumStableNameUtf8 = ComputeEnumStableNameUtf8();
+
+    private static byte[]? ComputeEnumStableNameUtf8()
+    {
+        var underlying = Nullable.GetUnderlyingType(typeof(TColumn)) ?? typeof(TColumn);
+        if (!underlying.IsEnum) return null;
+        return System.Text.Encoding.UTF8.GetBytes(EnumTypeRegistry.Register(underlying));
+    }
+
+    public override bool TryDecodeTaggedValueInto(ref CursorReader reader, byte kind, ColumnBinding binding)
+    {
+        if (kind == CursorFormat.KindNull)
+        {
+            if (default(TColumn) is not null) return false;
+            Unsafe.As<ColumnBinding<TColumn>>(binding).Value = default!;
+            return true;
+        }
+
+        if (kind == CursorFormat.KindEnum)
+        {
+            if (s_enumStableNameUtf8 is null) return false;
+            var byteLen = (int)reader.ReadVarUInt32();
+            if (reader.Failed || byteLen != s_enumStableNameUtf8.Length) return false;
+            var nameBytes = reader.ReadRawBytes(byteLen);
+            if (reader.Failed) return false;
+            if (!nameBytes.SequenceEqual(s_enumStableNameUtf8)) return false;
+            Unsafe.As<ColumnBinding<TColumn>>(binding).Value = s_codec.Read(ref reader);
+            return !reader.Failed;
+        }
+
+        if (kind != s_codec.Kind) return false;
+
+        Unsafe.As<ColumnBinding<TColumn>>(binding).Value = s_codec.Read(ref reader);
+        return !reader.Failed;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override void WriteBindingFromBoxed(object? boxed, ColumnBinding binding)
+    {
+        var typed = Unsafe.As<ColumnBinding<TColumn>>(binding);
+        if (boxed is null)
+        {
+            if (default(TColumn) is not null)
+                ThrowNullForNonNullable();
+            typed.Value = default!;
+        }
+        else
+        {
+            typed.Value = (TColumn)boxed;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override void WriteBindingFromReference(object reference, ColumnBinding binding)
+    {
+        Unsafe.As<ColumnBinding<TColumn>>(binding).Value = ObtainValueTyped(reference);
+    }
+
+    [DoesNotReturn]
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowNullForNonNullable() =>
+        throw new InvalidOperationException(
+            $"Cannot bind a null value to non-nullable pagination column of type '{typeof(TColumn)}'.");
 }

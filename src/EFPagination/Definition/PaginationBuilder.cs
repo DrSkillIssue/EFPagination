@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using EFPagination.Internal;
@@ -12,8 +11,6 @@ namespace EFPagination;
 /// <typeparam name="T">The entity type.</typeparam>
 public sealed class PaginationBuilder<T>
 {
-    private static readonly ConcurrentDictionary<Type, Func<bool, LambdaExpression, PaginationColumn<T>>> s_columnFactories = new();
-
     private readonly List<PaginationColumn<T>> _columns = [];
 
     internal PaginationColumn<T>[] ColumnsArray
@@ -21,33 +18,17 @@ public sealed class PaginationBuilder<T>
         get => field ??= [.. _columns];
     }
 
-    /// <summary>
-    /// Adds an ascending column to the pagination definition.
-    /// </summary>
-    /// <typeparam name="TColumn">The column value type.</typeparam>
-    /// <param name="columnExpression">A lambda selecting the column property from the entity.</param>
-    /// <returns>This builder for chaining.</returns>
+    /// <summary>Adds an ascending column to the pagination definition.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="columnExpression"/> is <see langword="null"/>.</exception>
-    public PaginationBuilder<T> Ascending<TColumn>(
-        Expression<Func<T, TColumn>> columnExpression) => ConfigureColumn(columnExpression, isDescending: false);
+    public PaginationBuilder<T> Ascending<TColumn>(Expression<Func<T, TColumn>> columnExpression)
+        => ConfigureColumn(columnExpression, isDescending: false);
 
-    /// <summary>
-    /// Adds a descending column to the pagination definition.
-    /// </summary>
-    /// <typeparam name="TColumn">The column value type.</typeparam>
-    /// <param name="columnExpression">A lambda selecting the column property from the entity.</param>
-    /// <returns>This builder for chaining.</returns>
+    /// <summary>Adds a descending column to the pagination definition.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="columnExpression"/> is <see langword="null"/>.</exception>
-    public PaginationBuilder<T> Descending<TColumn>(
-        Expression<Func<T, TColumn>> columnExpression) => ConfigureColumn(columnExpression, isDescending: true);
+    public PaginationBuilder<T> Descending<TColumn>(Expression<Func<T, TColumn>> columnExpression)
+        => ConfigureColumn(columnExpression, isDescending: true);
 
-    /// <summary>
-    /// Adds a column to the pagination definition with an explicit sort direction.
-    /// </summary>
-    /// <typeparam name="TColumn">The column value type.</typeparam>
-    /// <param name="columnExpression">A lambda selecting the column property from the entity.</param>
-    /// <param name="isDescending">If <see langword="true"/>, the column is sorted descending; otherwise ascending.</param>
-    /// <returns>This builder for chaining.</returns>
+    /// <summary>Adds a column with an explicit sort direction.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="columnExpression"/> is <see langword="null"/>.</exception>
     public PaginationBuilder<T> ConfigureColumn<TColumn>(
         Expression<Func<T, TColumn>> columnExpression,
@@ -77,32 +58,9 @@ public sealed class PaginationBuilder<T>
         var delegateType = typeof(Func<,>).MakeGenericType(typeof(T), pi.PropertyType);
         var lambda = Expression.Lambda(delegateType, property, param);
 
-        var factory = GetOrCreateColumnFactory(pi.PropertyType);
-        _columns.Add(factory(isDescending, lambda));
+        var concreteType = typeof(PaginationColumn<,>).MakeGenericType(typeof(T), pi.PropertyType);
+        var column = (PaginationColumn<T>)Activator.CreateInstance(concreteType, isDescending, lambda)!;
+        _columns.Add(column);
         return this;
-    }
-
-    private static Func<bool, LambdaExpression, PaginationColumn<T>> GetOrCreateColumnFactory(Type columnType)
-    {
-        return s_columnFactories.GetOrAdd(columnType, static ct =>
-        {
-            var paginationColumnType = typeof(PaginationColumn<,>).MakeGenericType(typeof(T), ct);
-            var funcType = typeof(Func<,>).MakeGenericType(typeof(T), ct);
-            var exprType = typeof(Expression<>).MakeGenericType(funcType);
-
-            var ctor = paginationColumnType.GetConstructor(
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                [typeof(bool), exprType])!;
-
-            var descParam = Expression.Parameter(typeof(bool), "desc");
-            var exprParam = Expression.Parameter(typeof(LambdaExpression), "expr");
-            var typedExpr = Expression.Convert(exprParam, exprType);
-
-            var newExpr = Expression.New(ctor, descParam, typedExpr);
-            var castExpr = Expression.Convert(newExpr, typeof(PaginationColumn<T>));
-
-            return Expression.Lambda<Func<bool, LambdaExpression, PaginationColumn<T>>>(
-                castExpr, descParam, exprParam).Compile();
-        });
     }
 }

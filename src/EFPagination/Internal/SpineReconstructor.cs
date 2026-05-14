@@ -43,12 +43,7 @@ internal sealed class SpineReconstructor
                 Op.Binary => Expression.MakeBinary(inst.ExprType, slots[inst.Left], slots[inst.Right]),
                 Op.BinaryStaticLeft => Expression.MakeBinary(inst.ExprType, inst.Static!, slots[inst.Right]),
                 Op.BinaryStaticRight => Expression.MakeBinary(inst.ExprType, slots[inst.Left], inst.Static!),
-                Op.BinaryBothStatic => inst.Static!,
-                Op.Equal => Expression.Equal(inst.Static!, slots[inst.Right]),
                 Op.MethodCall => Expression.Call(inst.Static!, inst.Method!, slots[inst.Right]),
-                Op.MethodCallCompare => Expression.MakeBinary(inst.ExprType,
-                    Expression.Call(inst.Static!, inst.Method!, slots[inst.Right]),
-                    FilterPredicateStrategy.ZeroConstant),
                 _ => throw new InvalidOperationException()
             };
         }
@@ -124,10 +119,6 @@ internal sealed class SpineReconstructor
                 {
                     var rightSlot = Flatten(binary.Right, ctx);
                     if (rightSlot < 0) return -1;
-
-                    if (binary.NodeType == ExpressionType.Equal)
-                        return ctx.Emit(new Instruction(Op.Equal, exprType: binary.NodeType, right: rightSlot, staticExpr: binary.Left));
-
                     return ctx.Emit(new Instruction(Op.BinaryStaticLeft, exprType: binary.NodeType, right: rightSlot, staticExpr: binary.Left));
                 }
 
@@ -196,10 +187,7 @@ internal sealed class SpineReconstructor
         Binary,
         BinaryStaticLeft,
         BinaryStaticRight,
-        BinaryBothStatic,
-        Equal,
         MethodCall,
-        MethodCallCompare,
     }
 
     private readonly struct Instruction(Op op, int index = 0, int left = 0, int right = 0,

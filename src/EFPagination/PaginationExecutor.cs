@@ -6,10 +6,6 @@ namespace EFPagination;
 /// <summary>
 /// Controls how <see cref="PaginationExecutor"/> materializes a page.
 /// </summary>
-/// <param name="PageSize">The requested number of items per page.</param>
-/// <param name="Direction">The pagination direction. Defaults to <see cref="PaginationDirection.Forward"/>.</param>
-/// <param name="IncludeCount">When <see langword="true"/>, a total row count is computed via an additional query.</param>
-/// <param name="MaxPageSize">The upper bound that clamps <paramref name="PageSize"/>. Defaults to 500.</param>
 public readonly record struct ExecutionOptions(
     int PageSize,
     PaginationDirection Direction = PaginationDirection.Forward,
@@ -105,12 +101,8 @@ public static class PaginationExecutor
         int? previousTotalCount,
         CancellationToken ct) where T : class
     {
-        var (items, hasMore) = await PageMaterializer.MaterializeAsync(
-            context.Query, options.EffectivePageSize, options.Direction, ct).ConfigureAwait(false);
-
-        var totalCount = options.IncludeCount
-            ? await query.CountAsync(ct).ConfigureAwait(false)
-            : previousTotalCount ?? -1;
+        var (items, hasMore, totalCount) = await MaterializeWithCountAsync(
+            query, options, context, previousTotalCount, ct).ConfigureAwait(false);
 
         var (next, previous) = CursorPair.Encode(
             definition, items, hasMore, hasCursor, options.Direction, sortBy, totalCount);
@@ -127,17 +119,30 @@ public static class PaginationExecutor
         ArgumentNullException.ThrowIfNull(query);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.PageSize);
 
-        var (items, hasMore) = await PageMaterializer.MaterializeAsync(
-            context.Query, options.EffectivePageSize, context.Direction, ct).ConfigureAwait(false);
+        var (items, hasMore, totalCount) = await MaterializeWithCountAsync(
+            query, options, context, previousTotalCount: null, ct).ConfigureAwait(false);
 
         var isFiltered = !ReferenceEquals(context.Query, context.OrderedQuery);
         var hasPrevious = context.Direction == PaginationDirection.Forward ? isFiltered : hasMore;
         var hasNext = context.Direction == PaginationDirection.Forward ? hasMore : isFiltered;
 
+        return new KeysetPage<T>(items, hasPrevious, hasNext, totalCount);
+    }
+
+    private static async Task<(List<T> Items, bool HasMore, int TotalCount)> MaterializeWithCountAsync<T>(
+        IQueryable<T> query,
+        ExecutionOptions options,
+        PaginationContext<T> context,
+        int? previousTotalCount,
+        CancellationToken ct) where T : class
+    {
+        var (items, hasMore) = await PageMaterializer.MaterializeAsync(
+            context.Query, options.EffectivePageSize, context.Direction, ct).ConfigureAwait(false);
+
         var totalCount = options.IncludeCount
             ? await query.CountAsync(ct).ConfigureAwait(false)
-            : -1;
+            : previousTotalCount ?? -1;
 
-        return new KeysetPage<T>(items, hasPrevious, hasNext, totalCount);
+        return (items, hasMore, totalCount);
     }
 }

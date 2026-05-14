@@ -155,10 +155,7 @@ internal ref struct CursorWriter
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void WriteVarInt32(int value)
-    {
-        WriteVarUInt32((uint)((value << 1) ^ (value >> 31)));
-    }
+    public void WriteVarInt32(int value) => WriteVarUInt32((uint)((value << 1) ^ (value >> 31)));
 
     public void WriteString(string value)
     {

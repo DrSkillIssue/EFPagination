@@ -92,8 +92,7 @@ internal sealed class TypeAdaptingExpressionVisitor<T, TColumn>(
         var replacement = (Expression)Expression.Convert(Visit(OldParameter), newType);
         foreach (var property in properties)
         {
-            var accessor = Accessor.Obtain(replacement.Type);
-            if (!accessor.TryGetProperty(property.Name, out var newProperty))
+            if (!AccessorCache.TryGetProperty(replacement.Type, property.Name, out var newProperty))
                 ThrowIncompatibleObject(property.Name, replacement.Type);
             replacement = Expression.MakeMemberAccess(replacement, newProperty);
         }

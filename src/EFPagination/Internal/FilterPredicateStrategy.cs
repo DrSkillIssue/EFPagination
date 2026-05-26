@@ -23,6 +23,8 @@ internal static class FilterPredicateStrategy
         { typeof(string), GetCompareToMethod(typeof(string)) },
         { typeof(Guid), GetCompareToMethod(typeof(Guid)) },
         { typeof(bool), GetCompareToMethod(typeof(bool)) },
+        { typeof(byte[]), typeof(ByteArrayPaginationComparer).GetMethod(nameof(ByteArrayPaginationComparer.Compare))
+            ?? throw new InvalidOperationException("ByteArrayPaginationComparer.Compare not found.") },
     }.ToFrozenDictionary();
 
     /// <summary>
@@ -100,7 +102,10 @@ internal static class FilterPredicateStrategy
     {
         if (s_typeToCompareToMethod.TryGetValue(column.Type, out var compareToMethod))
         {
-            var methodCall = Expression.Call(memberAccess, compareToMethod, EnsureMatchingType(memberAccess, referenceValue));
+            var matched = EnsureMatchingType(memberAccess, referenceValue);
+            var methodCall = compareToMethod.IsStatic
+                ? Expression.Call(compareToMethod, memberAccess, matched)
+                : Expression.Call(memberAccess, compareToMethod, matched);
             return compare(methodCall, ZeroConstant);
         }
 

@@ -62,6 +62,8 @@ internal static class TypedCursorIo
         if (typeof(T) == typeof(TimeOnly?)) { writer.WriteTimeOnly(Unsafe.As<T, TimeOnly?>(ref value).GetValueOrDefault()); return; }
         if (typeof(T) == typeof(TimeSpan?)) { writer.WriteTimeSpan(Unsafe.As<T, TimeSpan?>(ref value).GetValueOrDefault()); return; }
 
+        if (typeof(T) == typeof(byte[])) { writer.WriteByteArray(Unsafe.As<T, byte[]>(ref value)); return; }
+
         ThrowUnsupported<T>();
     }
 
@@ -116,6 +118,8 @@ internal static class TypedCursorIo
         if (typeof(T) == typeof(DateOnly?)) { DateOnly? v = reader.ReadDateOnly(); return Unsafe.As<DateOnly?, T>(ref v); }
         if (typeof(T) == typeof(TimeOnly?)) { TimeOnly? v = reader.ReadTimeOnly(); return Unsafe.As<TimeOnly?, T>(ref v); }
         if (typeof(T) == typeof(TimeSpan?)) { TimeSpan? v = reader.ReadTimeSpan(); return Unsafe.As<TimeSpan?, T>(ref v); }
+
+        if (typeof(T) == typeof(byte[])) { var v = reader.ReadByteArray(); return Unsafe.As<byte[], T>(ref v); }
 
         return ThrowUnsupported<T>();
     }

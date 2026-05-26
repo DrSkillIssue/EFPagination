@@ -229,6 +229,19 @@ internal ref struct CursorReader
         return Encoding.UTF8.GetString(slice);
     }
 
+    public byte[] ReadByteArray()
+    {
+        var byteLen = ReadVarUInt32();
+        if (Failed || byteLen > (uint)Remaining)
+        {
+            Failed = true;
+            return [];
+        }
+        var slice = _buffer.Slice(Position, (int)byteLen);
+        Position += (int)byteLen;
+        return slice.ToArray();
+    }
+
     public ReadOnlySpan<byte> ReadRawBytes(int length)
     {
         if ((uint)length > (uint)Remaining)

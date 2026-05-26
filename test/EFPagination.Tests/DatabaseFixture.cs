@@ -72,6 +72,12 @@ public abstract class DatabaseFixture : IDisposable
             var created = now.AddMinutes(i);
             // Deterministic pseudo-random count without System.Random (avoids CA5394).
             var inners2Count = (i * 7 + 3) % 10;
+            // 16-byte sequence whose big-endian numeric value increases with i so that
+            // byte-array lexicographic order matches Id order. Verifies that byte[] keyset
+            // pagination produces the same row ordering as a primitive key.
+            var bytes = new byte[16];
+            bytes[15] = (byte)(i & 0xFF);
+            bytes[14] = (byte)((i >> 8) & 0xFF);
             _ = context.MainModels.Add(new MainModel
             {
                 String = i.ToString(),
@@ -86,6 +92,7 @@ public abstract class DatabaseFixture : IDisposable
                 },
                 Inners2 = Enumerable.Range(0, inners2Count).Select(_ => new NestedInner2Model()).ToList(),
                 EnumValue = i % 2 == 0 ? TestEnum.Value1 : TestEnum.Value2,
+                Bytes = bytes,
             });
         }
 

@@ -59,6 +59,7 @@ internal sealed class SpineReconstructor
                 Op.BinaryStaticLeft => Expression.MakeBinary(inst.ExprType, inst.Static!, slots[inst.Right]),
                 Op.BinaryStaticRight => Expression.MakeBinary(inst.ExprType, slots[inst.Left], inst.Static!),
                 Op.MethodCall => Expression.Call(inst.Static!, inst.Method!, slots[inst.Right]),
+                Op.MethodCallStatic2 => Expression.Call(inst.Method!, inst.Static!, slots[inst.Right]),
                 _ => throw new InvalidOperationException()
             };
         }
@@ -149,6 +150,13 @@ internal sealed class SpineReconstructor
                 return ctx.Emit(new Instruction(Op.MethodCall, right: argSlot, staticExpr: call.Object, method: call.Method));
             }
 
+            case MethodCallExpression call when call.Object is null && call.Arguments.Count == 2:
+            {
+                var argSlot = Flatten(call.Arguments[1], ctx);
+                if (argSlot < 0) return -1;
+                return ctx.Emit(new Instruction(Op.MethodCallStatic2, right: argSlot, staticExpr: call.Arguments[0], method: call.Method));
+            }
+
             default:
                 return -1;
         }
@@ -203,6 +211,7 @@ internal sealed class SpineReconstructor
         BinaryStaticLeft,
         BinaryStaticRight,
         MethodCall,
+        MethodCallStatic2,
     }
 
     private readonly struct Instruction(Op op, int index = 0, int left = 0, int right = 0,

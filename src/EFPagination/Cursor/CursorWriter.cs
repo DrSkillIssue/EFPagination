@@ -186,4 +186,12 @@ internal ref struct CursorWriter
         Encoding.UTF8.GetBytes(value, dest);
         _buffer.Advance(byteCount);
     }
+
+    public void WriteByteArray(byte[] value)
+    {
+        WriteVarUInt32((uint)value.Length);
+        var dest = _buffer.GetSpan(value.Length);
+        value.AsSpan().CopyTo(dest);
+        _buffer.Advance(value.Length);
+    }
 }

@@ -7,6 +7,7 @@ namespace EFPagination.TestModels;
 [Index(nameof(IsDone))]
 [Index(nameof(Created))]
 [Index(nameof(CreatedComputed))]
+[Index(nameof(Bytes))]
 public class MainModel
 {
     public int Id { get; set; }
@@ -28,6 +29,10 @@ public class MainModel
     public NestedInnerModel Inner { get; set; }
 
     public List<NestedInner2Model> Inners2 { get; set; }
+
+#pragma warning disable CA1819 // Properties should not return arrays — required for EF Core varbinary mapping.
+    public byte[] Bytes { get; set; } = [];
+#pragma warning restore CA1819
 }
 
 [Index(nameof(Created))]

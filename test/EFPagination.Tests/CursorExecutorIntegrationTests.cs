@@ -144,6 +144,35 @@ public class CursorExecutorIntegrationTests
     }
 
     [Fact]
+    public async Task ExecuteFromCursorAsync_WithIncludeCount_ReusesCursorCount_WithoutSecondCountQuery()
+    {
+        var def = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+
+        var firstPage = await PaginationExecutor.ExecuteFromCursorAsync(
+            _dbContext.MainModels, def,
+            new ExecutionOptions(PageSize: 10, IncludeCount: true),
+            cursor: []);
+
+        firstPage.TotalCount.Should().Be(99);
+        var countLogsAfterFirst = CountQueryLogCount();
+        countLogsAfterFirst.Should().BeGreaterThan(0, "the first (cursor-less) page issues a COUNT(*)");
+
+        var secondPage = await PaginationExecutor.ExecuteFromCursorAsync(
+            _dbContext.MainModels, def,
+            new ExecutionOptions(PageSize: 10, IncludeCount: true),
+            cursor: firstPage.NextCursor);
+
+        secondPage.TotalCount.Should().Be(99);
+        CountQueryLogCount().Should().Be(countLogsAfterFirst,
+            "a cursor-carried count must be reused instead of re-running COUNT(*)");
+    }
+
+    // One COUNT(*) query surfaces across several log events (executing/executed); the absolute
+    // tally is irrelevant — what matters is that a cursor-carried page adds no further ones.
+    private int CountQueryLogCount()
+        => _dbContext.LogMessages.Count(m => m.Contains("COUNT(*)", StringComparison.OrdinalIgnoreCase));
+
+    [Fact]
     public async Task ExecuteFromCursorAsync_MultiColumn_RoundTripsCorrectly()
     {
         var def = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created).Ascending(x => x.Id));

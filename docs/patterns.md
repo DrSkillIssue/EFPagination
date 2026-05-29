@@ -181,7 +181,12 @@ var page = await dbContext.Users
 // page.TotalCount contains the total row count
 ```
 
-The total count is embedded in cursor tokens when available, so subsequent pages can carry it forward without re-executing the count query.
+`COUNT(*)` runs once, on the cursor-less request; the total rides the cursor and is reused on every
+later page. A cursor-less request recomputes it.
+
+> **Cursor–query contract.** A cursor belongs to the query that produced it. Reusing one after the
+> filter changes still returns a valid, ordered slice, but resumes from the old sort position and
+> reports the old count — drop the cursor when the query changes.
 
 ## Complete Endpoint Example
 

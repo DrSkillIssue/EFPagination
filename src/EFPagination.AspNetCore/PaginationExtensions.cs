@@ -16,7 +16,7 @@ public static class PaginationResponseExtensions
     /// <returns>A response envelope with cursor tokens and optional total count.</returns>
     public static PaginatedResponse<T> ToPaginatedResponse<T>(this CursorPage<T> page)
         => new(page.Items, page.NextCursor, page.PreviousCursor,
-               page.TotalCount >= 0 ? page.TotalCount : null);
+               PaginationCount.AsNullable(page.TotalCount));
 
     /// <summary>
     /// Converts a <see cref="CursorPage{T}"/> to a <see cref="PaginatedResponse{TOut}"/>
@@ -37,6 +37,6 @@ public static class PaginationResponseExtensions
             items[i] = selector(span[i]);
 
         return new PaginatedResponse<TOut>(items, page.NextCursor, page.PreviousCursor,
-            page.TotalCount >= 0 ? page.TotalCount : null);
+            PaginationCount.AsNullable(page.TotalCount));
     }
 }

@@ -1,5 +1,4 @@
 using EFPagination.Internal;
-using Microsoft.EntityFrameworkCore;
 
 namespace EFPagination;
 
@@ -8,7 +7,10 @@ namespace EFPagination;
 /// </summary>
 /// <param name="PageSize">The requested number of items per page.</param>
 /// <param name="Direction">The pagination direction. Defaults to <see cref="PaginationDirection.Forward"/>.</param>
-/// <param name="IncludeCount">When <see langword="true"/>, a total row count is computed via an additional query. Defaults to <see langword="false"/>.</param>
+/// <param name="IncludeCount">
+/// When <see langword="true"/>, the page carries the total row count, computed once on a cursor-less
+/// request and carried forward through later cursors. Defaults to <see langword="false"/>.
+/// </param>
 /// <param name="MaxPageSize">The upper bound that clamps <paramref name="PageSize"/>. Defaults to <c>500</c>.</param>
 public readonly record struct ExecutionOptions(
     int PageSize,
@@ -89,6 +91,11 @@ public static class PaginationExecutor
     /// <summary>
     /// Decodes an opaque cursor, executes the paginated query, and encodes next/previous cursors.
     /// </summary>
+    /// <remarks>
+    /// A cursor is bound to the query that produced it; reusing it after the filter changes resumes
+    /// from the encoded sort position within the new result set and reports the original count. Issue
+    /// a cursor-less request to restart and recompute when the query changes.
+    /// </remarks>
     /// <typeparam name="T">The entity type.</typeparam>
     /// <param name="query">The base <see cref="IQueryable{T}"/> to paginate.</param>
     /// <param name="definition">The prebuilt pagination query definition.</param>
@@ -201,9 +208,9 @@ public static class PaginationExecutor
         var (items, hasMore) = await PageMaterializer.MaterializeAsync(
             context.Query, options.EffectivePageSize, context.Direction, ct).ConfigureAwait(false);
 
-        var totalCount = options.IncludeCount
-            ? await query.CountAsync(ct).ConfigureAwait(false)
-            : previousTotalCount ?? -1;
+        var totalCount = await TotalCountResolver
+            .ResolveAsync(options.IncludeCount, previousTotalCount, query, ct)
+            .ConfigureAwait(false);
 
         return (items, hasMore, totalCount);
     }

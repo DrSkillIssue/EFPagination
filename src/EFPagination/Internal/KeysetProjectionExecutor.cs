@@ -43,9 +43,9 @@ internal static class KeysetProjectionExecutor
             resolved.Context.Query, selector, builder.Definition.Columns,
             effectivePageSize + 1, builder.Direction, ct).ConfigureAwait(false);
 
-        var totalCount = builder.ShouldIncludeCount
-            ? await GetCountAsync(builder.Source, ct).ConfigureAwait(false)
-            : resolved.TotalCount ?? -1;
+        var totalCount = await TotalCountResolver
+            .ResolveAsync(builder.ShouldIncludeCount, resolved.TotalCount, builder.Source, ct)
+            .ConfigureAwait(false);
 
         var (next, previous) = EncodeCursorPair(
             builder.Definition, page, page.HasMore, resolved.HasInitialReference,
@@ -116,7 +116,7 @@ internal static class KeysetProjectionExecutor
     {
         if (page.Count == 0) return (null, null);
 
-        var options = new PaginationCursorOptions(sortBy, totalCount > 0 ? totalCount : null);
+        var options = new PaginationCursorOptions(sortBy, PaginationCount.AsNullable(totalCount));
 
         string? next = null;
         string? previous = null;
@@ -142,7 +142,4 @@ internal static class KeysetProjectionExecutor
         page.ExtractKeysIntoBindings(index, bindings);
         return PaginationCursor.Encode(definition, new PaginationValues<T>(bindings), options);
     }
-
-    private static Task<int> GetCountAsync<T>(IQueryable<T> source, CancellationToken ct)
-        => Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.CountAsync(source, ct);
 }

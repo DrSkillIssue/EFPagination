@@ -12,6 +12,11 @@ namespace EFPagination;
 /// matching <see cref="PaginationQueryDefinition{T}"/> and validates payload compatibility
 /// via a schema fingerprint. Cursors may optionally carry a 128-bit truncated HMAC-SHA256
 /// signature for tamper detection.
+/// <para>
+/// A cursor is bound to the filter and ordering that produced it: its boundary values and any
+/// carried total count must not be reused across a changed query. Start a fresh, cursor-less
+/// request when the query changes.
+/// </para>
 /// </remarks>
 public static class PaginationCursor
 {

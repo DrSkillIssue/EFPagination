@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using Microsoft.EntityFrameworkCore;
 
 namespace EFPagination.Internal;
 
@@ -36,9 +35,9 @@ internal static class KeysetQueryExecutor
         var (items, hasMore) = await PageMaterializer.MaterializeAsync(
             resolved.Context.Query, effectivePageSize, builder.Direction, ct).ConfigureAwait(false);
 
-        var totalCount = builder.ShouldIncludeCount
-            ? await builder.Source.CountAsync(ct).ConfigureAwait(false)
-            : resolved.TotalCount ?? -1;
+        var totalCount = await TotalCountResolver
+            .ResolveAsync(builder.ShouldIncludeCount, resolved.TotalCount, builder.Source, ct)
+            .ConfigureAwait(false);
 
         var (next, previous) = CursorPair.Encode(
             builder.Definition, items, hasMore, resolved.HasInitialReference, builder.Direction, sortBy, totalCount);

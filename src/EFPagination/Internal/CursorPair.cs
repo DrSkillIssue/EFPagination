@@ -29,9 +29,7 @@ internal static class CursorPair
     {
         if (items.Count == 0) return (null, null);
 
-        var options = new PaginationCursorOptions(
-            sortBy,
-            totalCount > 0 ? totalCount : null);
+        var options = new PaginationCursorOptions(sortBy, PaginationCount.AsNullable(totalCount));
 
         var next = hasMore ? PaginationCursor.Encode(definition, items[^1], options) : null;
         var previous = (hasInitialReference || direction == PaginationDirection.Backward)

@@ -93,8 +93,8 @@ public readonly record struct KeysetQueryBuilder<T> where T : class
         => this with { CursorString = null, Reference = null, BoundValues = values, Direction = PaginationDirection.Backward };
 
     /// <summary>
-    /// Enables total row count computation via a separate <c>SELECT COUNT(*)</c> SQL query.
-    /// The result is exposed on <see cref="CursorPage{T}.TotalCount"/>.
+    /// Enables the total row count on <see cref="CursorPage{T}.TotalCount"/>, computed once on a
+    /// cursor-less request and carried forward through later cursors.
     /// </summary>
     /// <returns>A new builder with count computation enabled.</returns>
     public KeysetQueryBuilder<T> IncludeCount() => this with { ShouldIncludeCount = true };

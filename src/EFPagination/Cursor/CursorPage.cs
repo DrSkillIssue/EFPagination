@@ -9,7 +9,7 @@ namespace EFPagination;
 /// <param name="Items">The materialized items for the current page, in correct order.</param>
 /// <param name="NextCursor">An opaque cursor token for fetching the next page, or <see langword="null"/> when no more pages exist.</param>
 /// <param name="PreviousCursor">An opaque cursor token for fetching the previous page, or <see langword="null"/> when on the first page.</param>
-/// <param name="TotalCount">The total row count when requested; otherwise <c>-1</c>.</param>
+/// <param name="TotalCount">The total row count when requested; otherwise <see cref="PaginationCount.None"/>.</param>
 public readonly record struct CursorPage<T>(
     List<T> Items,
     string? NextCursor,

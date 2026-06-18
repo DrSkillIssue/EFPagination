@@ -31,10 +31,11 @@ internal static class CursorPair
 
         var options = new PaginationCursorOptions(sortBy, PaginationCount.AsNullable(totalCount));
 
-        var next = hasMore ? PaginationCursor.Encode(definition, items[^1], options) : null;
-        var previous = (hasInitialReference || direction == PaginationDirection.Backward)
-            ? PaginationCursor.Encode(definition, items[0], options)
-            : null;
+        var hasPrevious = direction == PaginationDirection.Forward ? hasInitialReference : hasMore;
+        var hasNext = direction == PaginationDirection.Forward ? hasMore : hasInitialReference;
+
+        var next = hasNext ? PaginationCursor.Encode(definition, items[^1], options) : null;
+        var previous = hasPrevious ? PaginationCursor.Encode(definition, items[0], options) : null;
         return (next, previous);
     }
 }

@@ -97,6 +97,8 @@ public class ServerSideProjectionIntegrationTests
             .TakeAsync(10, x => new ItemDto(x.Id, x.String, x.Created));
 
         back.Items.Select(i => i.EntityId).Should().BeEquivalentTo(Enumerable.Range(1, 10), o => o.WithStrictOrdering());
+        back.PreviousCursor.Should().BeNull();
+        back.NextCursor.Should().NotBeNullOrEmpty();
     }
 
     [Fact]

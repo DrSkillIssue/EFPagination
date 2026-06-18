@@ -118,13 +118,16 @@ internal static class KeysetProjectionExecutor
 
         var options = new PaginationCursorOptions(sortBy, PaginationCount.AsNullable(totalCount));
 
+        var hasPrevious = direction == PaginationDirection.Forward ? hasInitialReference : hasMore;
+        var hasNext = direction == PaginationDirection.Forward ? hasMore : hasInitialReference;
+
         string? next = null;
         string? previous = null;
 
-        if (hasMore)
+        if (hasNext)
             next = EncodeFromIndex(definition, page, page.Count - 1, options);
 
-        if (hasInitialReference || direction == PaginationDirection.Backward)
+        if (hasPrevious)
             previous = EncodeFromIndex(definition, page, 0, options);
 
         return (next, previous);

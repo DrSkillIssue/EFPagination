@@ -76,6 +76,46 @@ public class CursorExecutorIntegrationTests
     }
 
     [Fact]
+    public async Task ExecuteFromCursorAsync_BackwardToFirstPage_HasNoPreviousCursor_AndHasNextCursor()
+    {
+        var def = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+
+        var firstPage = await PaginationExecutor.ExecuteFromCursorAsync(
+            _dbContext.MainModels, def,
+            new ExecutionOptions(PageSize: 10),
+            cursor: []);
+
+        var secondPage = await PaginationExecutor.ExecuteFromCursorAsync(
+            _dbContext.MainModels, def,
+            new ExecutionOptions(PageSize: 10),
+            firstPage.NextCursor);
+
+        var back = await PaginationExecutor.ExecuteFromCursorAsync(
+            _dbContext.MainModels, def,
+            new ExecutionOptions(PageSize: 10, Direction: PaginationDirection.Backward),
+            secondPage.PreviousCursor);
+
+        back.Items.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(1, 10), o => o.WithStrictOrdering());
+        back.PreviousCursor.Should().BeNull();
+        back.NextCursor.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task ExecuteFromCursorAsync_BackwardWithoutCursor_ReturnsLastPageWithPreviousCursor_AndNoNextCursor()
+    {
+        var def = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+
+        var page = await PaginationExecutor.ExecuteFromCursorAsync(
+            _dbContext.MainModels, def,
+            new ExecutionOptions(PageSize: 10, Direction: PaginationDirection.Backward),
+            cursor: []);
+
+        page.Items.Select(x => x.Id).Should().BeEquivalentTo(Enumerable.Range(90, 10), o => o.WithStrictOrdering());
+        page.PreviousCursor.Should().NotBeNullOrEmpty();
+        page.NextCursor.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ExecuteFromCursorAsync_LastPage_HasNullNextCursor()
     {
         var def = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));

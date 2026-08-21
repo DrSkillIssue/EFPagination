@@ -619,7 +619,7 @@ Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
 
 The `Expression<Func<T, TOut>>` overloads run the projection inside the SQL statement that applies the keyset `ORDER BY`. Subqueries inside the selector stay server-side and the SELECT list materializes only the projected columns plus the keyset key columns. The pagination definition must have 1–8 key columns; outside that range, the overload throws `NotSupportedException`.
 
-Every `PaginateAsync` overload throws `BadHttpRequestException` (status 400) for an invalid or expired cursor and for a `request.PageSize` of zero or less. ASP.NET Core's exception handler middleware maps its status code to the response.
+Every `PaginateAsync` overload throws `BadHttpRequestException` (status 400) for an invalid or expired cursor, for a `request.PageSize` of zero or less, and for a `request.PageSize` above `maxPageSize`. ASP.NET Core's exception handler middleware maps its status code to the response.
 
 See [Server-Side Projection](patterns.md#server-side-projection) for end-to-end examples.
 

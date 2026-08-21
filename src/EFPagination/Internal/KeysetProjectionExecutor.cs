@@ -47,9 +47,21 @@ internal static class KeysetProjectionExecutor
             .ResolveAsync(builder.ShouldIncludeCount, resolved.TotalCount, builder.Source, ct)
             .ConfigureAwait(false);
 
-        var (next, previous) = EncodeCursorPair(
-            builder.Definition, page, page.HasMore, resolved.HasInitialReference,
-            builder.Direction, sortBy, totalCount);
+        string? next = null;
+        string? previous = null;
+        if (page.Count > 0)
+        {
+            var options = new PaginationCursorOptions(sortBy, PaginationCount.AsNullable(totalCount));
+
+            var hasPrevious = builder.Direction == PaginationDirection.Forward ? resolved.HasInitialReference : page.HasMore;
+            var hasNext = builder.Direction == PaginationDirection.Forward ? page.HasMore : resolved.HasInitialReference;
+
+            if (hasNext)
+                next = EncodeFromIndex(builder.Definition, page, page.Count - 1, options);
+
+            if (hasPrevious)
+                previous = EncodeFromIndex(builder.Definition, page, 0, options);
+        }
 
         return new CursorPage<TOut>(page.ToItemList(), next, previous, totalCount);
     }
@@ -103,34 +115,6 @@ internal static class KeysetProjectionExecutor
 
             context = builder.Source.Paginate(definition, PaginationDirection.Forward, new PaginationValues<T>(bindings));
         }
-    }
-
-    private static (string? Next, string? Previous) EncodeCursorPair<T, TOut>(
-        PaginationQueryDefinition<T> definition,
-        ProjectionMaterializedPage<T, TOut> page,
-        bool hasMore,
-        bool hasInitialReference,
-        PaginationDirection direction,
-        string? sortBy,
-        int totalCount) where T : class
-    {
-        if (page.Count == 0) return (null, null);
-
-        var options = new PaginationCursorOptions(sortBy, PaginationCount.AsNullable(totalCount));
-
-        var hasPrevious = direction == PaginationDirection.Forward ? hasInitialReference : hasMore;
-        var hasNext = direction == PaginationDirection.Forward ? hasMore : hasInitialReference;
-
-        string? next = null;
-        string? previous = null;
-
-        if (hasNext)
-            next = EncodeFromIndex(definition, page, page.Count - 1, options);
-
-        if (hasPrevious)
-            previous = EncodeFromIndex(definition, page, 0, options);
-
-        return (next, previous);
     }
 
     private static string EncodeFromIndex<T, TOut>(

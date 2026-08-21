@@ -146,10 +146,8 @@ public sealed class PaginationSortRegistry<T>
 
 Behavior:
 
-- `Resolve` uses the default definition when `sortBy` is empty or unknown.
-- `TryResolve` returns `false` when `sortBy` does not match any registered field (empty `sortBy` returns the default and `true`).
-- Selects the descending variant only when `sortDir` equals `"desc"` (case-insensitive).
-- Uses ascending for all other direction values.
+- `Resolve` uses the default definition when `sortBy` is empty or unknown, selects the descending variant when `sortDir` equals `"desc"` (case-insensitive), and uses ascending for all other direction values.
+- `TryResolve` returns `false` when `sortBy` does not match any registered field or `sortDir` is outside empty, `"asc"`, or `"desc"` (case-insensitive). Empty `sortBy` returns the default and `true`.
 
 ## SortField\<T\> / SortField
 
@@ -536,7 +534,7 @@ KeysetQueryBuilder<T> FromRequest<T>(
 
 ### Keyset (Registry + Request)
 
-Creates a builder from a sort registry and pagination request, resolving the definition from the request's sort parameters and applying cursors:
+Creates a builder from a sort registry and pagination request, resolving the definition from the request's sort parameters and applying cursors. Throws `BadHttpRequestException` for an unknown sort field or an unsupported direction:
 
 ```cs
 KeysetQueryBuilder<T> Keyset<T>(
@@ -597,7 +595,7 @@ Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
     CancellationToken ct = default) where T : class;
 ```
 
-Both have a `PaginationSortRegistry<T>` overload that resolves the definition from `request.SortBy`/`request.SortDir`:
+Both have a `PaginationSortRegistry<T>` overload that resolves the definition from `request.SortBy`/`request.SortDir`, throwing `BadHttpRequestException` for an unknown sort field or an unsupported direction:
 
 ```cs
 Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
@@ -620,6 +618,8 @@ Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
 ```
 
 The `Expression<Func<T, TOut>>` overloads run the projection inside the SQL statement that applies the keyset `ORDER BY`. Subqueries inside the selector stay server-side and the SELECT list materializes only the projected columns plus the keyset key columns. The pagination definition must have 1–8 key columns; outside that range, the overload throws `NotSupportedException`.
+
+Every `PaginateAsync` overload throws `BadHttpRequestException` (status 400) for an invalid or expired cursor and for a `request.PageSize` of zero or less. ASP.NET Core's exception handler middleware maps its status code to the response.
 
 See [Server-Side Projection](patterns.md#server-side-projection) for end-to-end examples.
 

@@ -42,9 +42,8 @@ public static class KeysetBuilderAspNetExtensions
         PaginationRequest request) where T : class
     {
         ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(registry);
 
-        var definition = registry.Resolve(request.SortBy.AsSpan(), request.SortDir.AsSpan());
+        var definition = registry.Resolve(request);
         return new KeysetQueryBuilder<T>(source, definition)
             .WithSortBy(request.SortBy)
             .FromRequest(request);

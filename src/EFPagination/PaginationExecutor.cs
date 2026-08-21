@@ -185,7 +185,6 @@ public static class PaginationExecutor
         PaginationContext<T> context,
         CancellationToken ct) where T : class
     {
-        ArgumentNullException.ThrowIfNull(query);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.PageSize);
 
         var (items, hasMore, totalCount) = await MaterializeWithCountAsync(

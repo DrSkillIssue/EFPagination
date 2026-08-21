@@ -63,23 +63,28 @@ public sealed class PaginationSortRegistry<T>
     /// Attempts to resolve a pagination definition for the requested sort field and direction.
     /// </summary>
     /// <param name="sortBy">The requested logical sort field name.</param>
-    /// <param name="sortDir">The requested direction; <c>desc</c> selects descending.</param>
+    /// <param name="sortDir">The requested direction: <c>asc</c>, <c>desc</c>, or empty for ascending.</param>
     /// <param name="definition">When this method returns <see langword="true"/>, the matched definition.</param>
-    /// <returns><see langword="true"/> if a matching field was found or <paramref name="sortBy"/> was empty (default used); <see langword="false"/> if the field was not found.</returns>
+    /// <returns><see langword="true"/> if a definition was resolved; otherwise, <see langword="false"/>.</returns>
     public bool TryResolve(
         ReadOnlySpan<char> sortBy,
         ReadOnlySpan<char> sortDir,
         out PaginationQueryDefinition<T> definition)
     {
+        var isDesc = sortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
+        if (!isDesc && !sortDir.IsEmpty && !sortDir.Equals("asc", StringComparison.OrdinalIgnoreCase))
+        {
+            definition = default!;
+            return false;
+        }
+
         if (sortBy.IsEmpty)
         {
             definition = _default;
             return true;
         }
 
-        var isDesc = sortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
         var lookup = isDesc ? _descLookup : _ascLookup;
-
         return lookup.TryGetValue(sortBy, out definition!);
     }
 }

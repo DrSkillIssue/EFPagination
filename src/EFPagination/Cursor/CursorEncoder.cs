@@ -50,8 +50,21 @@ internal static class CursorEncoder
         {
             var writer = new CursorWriter(buffer);
             body.Write(ref writer);
-            AppendHmac(buffer, options.SigningKey);
-            return Base64UrlEncode(buffer);
+
+            if (options.SigningKey is byte[] signingKey)
+            {
+                Span<byte> hmacFull = stackalloc byte[HMACSHA256.HashSizeInBytes];
+                HMACSHA256.HashData(signingKey, buffer.WrittenSpan, hmacFull);
+                var dest = buffer.GetSpan(CursorFormat.HmacTruncatedLength);
+                hmacFull[..CursorFormat.HmacTruncatedLength].CopyTo(dest);
+                buffer.Advance(CursorFormat.HmacTruncatedLength);
+            }
+
+            var len = Base64Url.GetEncodedLength(buffer.Written);
+            return string.Create(len, buffer, static (span, state) =>
+            {
+                Base64Url.TryEncodeToChars(state.WrittenSpan, span, out _);
+            });
         }
         finally
         {
@@ -128,22 +141,4 @@ internal static class CursorEncoder
         writer.WriteVarUInt32((uint)valueCount);
     }
 
-    private static void AppendHmac(CursorBuffer buffer, byte[]? signingKey)
-    {
-        if (signingKey is null) return;
-        Span<byte> hmacFull = stackalloc byte[HMACSHA256.HashSizeInBytes];
-        HMACSHA256.HashData(signingKey, buffer.WrittenSpan, hmacFull);
-        var dest = buffer.GetSpan(CursorFormat.HmacTruncatedLength);
-        hmacFull[..CursorFormat.HmacTruncatedLength].CopyTo(dest);
-        buffer.Advance(CursorFormat.HmacTruncatedLength);
-    }
-
-    private static string Base64UrlEncode(CursorBuffer buffer)
-    {
-        var len = Base64Url.GetEncodedLength(buffer.Written);
-        return string.Create(len, buffer, static (span, state) =>
-        {
-            Base64Url.TryEncodeToChars(state.WrittenSpan, span, out _);
-        });
-    }
 }

@@ -144,7 +144,10 @@ public static class PaginationExtensions
 
         using var activity = PaginationDiagnostics.StartPaginate(columns, direction, predicateTemplate is not null);
 
-        var orderedQuery = ApplyOrdering(source, columns, direction);
+        var orderedQuery = columns[0].ApplyOrderBy(source, direction);
+        for (var i = 1; i < columns.Length; i++)
+            orderedQuery = columns[i].ApplyThenOrderBy(orderedQuery, direction);
+
         if (bindings is null || bindings.Length == 0)
             return new PaginationContext<T>(orderedQuery, orderedQuery, columns, direction, predicateTemplate);
 
@@ -307,8 +310,29 @@ public static class PaginationExtensions
     {
         var bindings = new ColumnBinding[columns.Length];
 
-        if (referenceValues.Length == columns.Length && TryPopulatePositional(columns, referenceValues, bindings))
-            return bindings;
+        if (referenceValues.Length == columns.Length)
+        {
+            var positional = true;
+            for (var i = 0; i < columns.Length; i++)
+            {
+                if (!string.Equals(referenceValues[i].Name, columns[i].GetRequiredPropertyNameForColumnValues(), StringComparison.OrdinalIgnoreCase))
+                {
+                    positional = false;
+                    break;
+                }
+            }
+
+            if (positional)
+            {
+                for (var i = 0; i < columns.Length; i++)
+                {
+                    var binding = columns[i].CreateBinding();
+                    columns[i].WriteBindingFromBoxed(referenceValues[i].Value, binding);
+                    bindings[i] = binding;
+                }
+                return bindings;
+            }
+        }
 
         for (var i = 0; i < columns.Length; i++)
         {
@@ -336,27 +360,6 @@ public static class PaginationExtensions
         return bindings;
     }
 
-    private static bool TryPopulatePositional<T>(
-        PaginationColumn<T>[] columns,
-        ReadOnlySpan<ColumnValue> values,
-        ColumnBinding[] bindings)
-    {
-        for (var i = 0; i < columns.Length; i++)
-        {
-            if (!string.Equals(values[i].Name, columns[i].GetRequiredPropertyNameForColumnValues(), StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
-
-        for (var i = 0; i < columns.Length; i++)
-        {
-            var binding = columns[i].CreateBinding();
-            columns[i].WriteBindingFromBoxed(values[i].Value, binding);
-            bindings[i] = binding;
-        }
-
-        return true;
-    }
-
     private static Expression<Func<T, bool>> BuildFilterPredicateFromBindings<T>(
         PaginationColumn<T>[] columns,
         PaginationDirection direction,
@@ -372,15 +375,4 @@ public static class PaginationExtensions
         return FastLambda<T>.Create(body, param);
     }
 
-    private static IOrderedQueryable<T> ApplyOrdering<T>(
-        IQueryable<T> source,
-        PaginationColumn<T>[] columns,
-        PaginationDirection direction)
-    {
-        var orderedQuery = columns[0].ApplyOrderBy(source, direction);
-        for (var i = 1; i < columns.Length; i++)
-            orderedQuery = columns[i].ApplyThenOrderBy(orderedQuery, direction);
-
-        return orderedQuery;
-    }
 }

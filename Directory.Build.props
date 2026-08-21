@@ -18,11 +18,11 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <EntityFrameworkCoreVersion>10.0.3</EntityFrameworkCoreVersion>
+    <EntityFrameworkCoreVersion>10.0.11</EntityFrameworkCoreVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsPackable)' != 'false'">
-    <Version>3.0.3</Version>
+    <Version>3.1.0</Version>
     <Authors>DrSkillIssue</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/DrSkillIssue/EFPagination</PackageProjectUrl>

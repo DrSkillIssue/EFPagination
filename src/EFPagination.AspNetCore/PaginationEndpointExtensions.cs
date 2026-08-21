@@ -23,6 +23,7 @@ public static class PaginationEndpointExtensions
     /// <param name="includeCount">Whether to compute the total row count.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>A task that resolves to a <see cref="PaginatedResponse{TOut}"/>.</returns>
+    /// <exception cref="BadHttpRequestException">The request's cursor is invalid or expired, or its page size is not a positive integer of at most <paramref name="maxPageSize"/>.</exception>
     public static async Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
         this IQueryable<T> query,
         PaginationQueryDefinition<T> definition,
@@ -32,6 +33,9 @@ public static class PaginationEndpointExtensions
         bool includeCount = false,
         CancellationToken ct = default) where T : class
     {
+        if (request.PageSize > maxPageSize)
+            throw new BadHttpRequestException($"pageSize '{request.PageSize}' exceeds the maximum page size {maxPageSize}.");
+
         var (cursor, direction) = request.Before is not null
             ? (request.Before, PaginationDirection.Backward)
             : (request.After, PaginationDirection.Forward);
@@ -104,7 +108,7 @@ public static class PaginationEndpointExtensions
     /// <param name="ct">A cancellation token.</param>
     /// <returns>A task that resolves to a <see cref="PaginatedResponse{TOut}"/> with projected items.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="query"/>, <paramref name="definition"/>, or <paramref name="selector"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">The cursor in <paramref name="request"/> is invalid or expired.</exception>
+    /// <exception cref="BadHttpRequestException">The request's cursor is invalid or expired, or its page size is not a positive integer of at most <paramref name="maxPageSize"/>.</exception>
     /// <exception cref="NotSupportedException">The pagination definition has fewer than 1 or more than 8 key columns.</exception>
     public static async Task<PaginatedResponse<TOut>> PaginateAsync<T, TOut>(
         this IQueryable<T> query,
@@ -119,14 +123,16 @@ public static class PaginationEndpointExtensions
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(selector);
 
-        var effectivePageSize = request.PageSize > maxPageSize ? maxPageSize : request.PageSize;
+        if (request.PageSize > maxPageSize)
+            throw new BadHttpRequestException($"pageSize '{request.PageSize}' exceeds the maximum page size {maxPageSize}.");
+
         var builder = query.Keyset(definition).FromRequest(request).MaxPageSize(maxPageSize);
         if (includeCount)
             builder = builder.IncludeCount();
 
         try
         {
-            var page = await builder.TakeAsync(effectivePageSize, selector, ct).ConfigureAwait(false);
+            var page = await builder.TakeAsync(request.PageSize, selector, ct).ConfigureAwait(false);
 
             return page.ToPaginatedResponse();
         }

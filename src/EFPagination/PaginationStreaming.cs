@@ -30,8 +30,6 @@ public static class PaginationStreaming
         int pageSize,
         CancellationToken ct = default) where T : class
     {
-        ArgumentNullException.ThrowIfNull(query);
-        ArgumentNullException.ThrowIfNull(definition);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
 
         var context = query.Paginate(definition, PaginationDirection.Forward);

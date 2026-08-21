@@ -242,7 +242,7 @@ app.MapGet("/api/users", async (
 });
 ```
 
-The `Keyset(registry, request)` overload resolves the definition from `request.SortBy`/`request.SortDir`, applies the cursor from `request.After` or `request.Before`, and embeds the sort key in cursor tokens so sort context is preserved across pages.
+The `Keyset(registry, request)` overload resolves the definition from `request.SortBy`/`request.SortDir`, applies the cursor from `request.After` or `request.Before`, and embeds the sort key in cursor tokens so sort context is preserved across pages. It throws `BadHttpRequestException` (status 400) for an unknown sort field or an unsupported direction.
 
 ## Manual Cursor Encode/Decode
 

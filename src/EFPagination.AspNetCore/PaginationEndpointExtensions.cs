@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Microsoft.AspNetCore.Http;
 
 namespace EFPagination.AspNetCore;
 
@@ -31,20 +32,29 @@ public static class PaginationEndpointExtensions
         bool includeCount = false,
         CancellationToken ct = default) where T : class
     {
-        var (cursor, direction) = ResolveCursorAndDirection(request);
+        var (cursor, direction) = request.Before is not null
+            ? (request.Before, PaginationDirection.Backward)
+            : (request.After, PaginationDirection.Forward);
 
-        var page = await PaginationExecutor.ExecuteFromCursorAsync(
-            query,
-            definition,
-            new ExecutionOptions(
-                PageSize: request.PageSize,
-                Direction: direction,
-                IncludeCount: includeCount,
-                MaxPageSize: maxPageSize),
-            cursor,
-            ct).ConfigureAwait(false);
+        try
+        {
+            var page = await PaginationExecutor.ExecuteFromCursorAsync(
+                query,
+                definition,
+                new ExecutionOptions(
+                    PageSize: request.PageSize,
+                    Direction: direction,
+                    IncludeCount: includeCount,
+                    MaxPageSize: maxPageSize),
+                cursor,
+                ct).ConfigureAwait(false);
 
-        return page.ToPaginatedResponse(selector);
+            return page.ToPaginatedResponse(selector);
+        }
+        catch (ArgumentException e) when (e is not ArgumentNullException)
+        {
+            throw new BadHttpRequestException(e.Message, e);
+        }
     }
 
     /// <summary>
@@ -73,8 +83,7 @@ public static class PaginationEndpointExtensions
         bool includeCount = false,
         CancellationToken ct = default) where T : class
     {
-        ArgumentNullException.ThrowIfNull(registry);
-        var definition = registry.Resolve(request.SortBy.AsSpan(), request.SortDir.AsSpan());
+        var definition = registry.Resolve(request);
         return PaginateAsync(query, definition, request, selector, maxPageSize, includeCount, ct);
     }
 
@@ -111,12 +120,20 @@ public static class PaginationEndpointExtensions
         ArgumentNullException.ThrowIfNull(selector);
 
         var effectivePageSize = request.PageSize > maxPageSize ? maxPageSize : request.PageSize;
-        var page = await query.Keyset(definition).FromRequest(request)
-            .MaxPageSize(maxPageSize)
-            .ConfigureIncludeCount(includeCount)
-            .TakeAsync(effectivePageSize, selector, ct).ConfigureAwait(false);
+        var builder = query.Keyset(definition).FromRequest(request).MaxPageSize(maxPageSize);
+        if (includeCount)
+            builder = builder.IncludeCount();
 
-        return page.ToPaginatedResponse();
+        try
+        {
+            var page = await builder.TakeAsync(effectivePageSize, selector, ct).ConfigureAwait(false);
+
+            return page.ToPaginatedResponse();
+        }
+        catch (ArgumentException e) when (e is not ArgumentNullException)
+        {
+            throw new BadHttpRequestException(e.Message, e);
+        }
     }
 
     /// <summary>
@@ -145,19 +162,8 @@ public static class PaginationEndpointExtensions
         bool includeCount = false,
         CancellationToken ct = default) where T : class
     {
-        ArgumentNullException.ThrowIfNull(registry);
-        var definition = registry.Resolve(request.SortBy.AsSpan(), request.SortDir.AsSpan());
+        var definition = registry.Resolve(request);
         return PaginateAsync(query, definition, request, selector, maxPageSize, includeCount, ct);
     }
 
-    private static KeysetQueryBuilder<T> ConfigureIncludeCount<T>(this KeysetQueryBuilder<T> builder, bool includeCount) where T : class
-        => includeCount ? builder.IncludeCount() : builder;
-
-    private static (string? cursor, PaginationDirection direction) ResolveCursorAndDirection(PaginationRequest request)
-    {
-        if (request.Before is not null)
-            return (request.Before, PaginationDirection.Backward);
-
-        return (request.After, PaginationDirection.Forward);
-    }
 }

@@ -80,7 +80,7 @@ var page = await dbContext.Users
 
 `Resolve` is case-insensitive for both field names and `desc`, and falls back to the default definition when the request asks for an unknown sort.
 
-`TryResolve` returns `false` instead of falling back, allowing you to reject invalid sort field names:
+`TryResolve` returns `false` for an unknown sort field or an unsupported direction, allowing you to reject invalid sort requests:
 
 ```cs
 if (!Sorts.TryResolve(sortBy, sortDir, out var definition))

@@ -15,19 +15,7 @@ public sealed class PaginationQueryDefinition<T>
     {
         Columns = columns;
         PredicateTemplate = FilterPredicateStrategy.CreateTemplate(columns);
-        SchemaFingerprint = ComputeFingerprint(columns);
-    }
 
-    internal PaginationColumn<T>[] Columns { get; }
-
-    internal CachedPredicateTemplate<T> PredicateTemplate { get; }
-
-    internal int ColumnCount => Columns.Length;
-
-    internal uint SchemaFingerprint { get; }
-
-    private static uint ComputeFingerprint(PaginationColumn<T>[] columns)
-    {
         uint hash = 2166136261;
         for (var i = 0; i < columns.Length; i++)
         {
@@ -38,6 +26,14 @@ public sealed class PaginationQueryDefinition<T>
             hash ^= columns[i].IsDescending ? 1u : 0u;
             hash *= 16777619;
         }
-        return hash;
+        SchemaFingerprint = hash;
     }
+
+    internal PaginationColumn<T>[] Columns { get; }
+
+    internal CachedPredicateTemplate<T> PredicateTemplate { get; }
+
+    internal int ColumnCount => Columns.Length;
+
+    internal uint SchemaFingerprint { get; }
 }

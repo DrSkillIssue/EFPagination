@@ -1,0 +1,60 @@
+name: Research
+description: An open question to answer before a change.
+title: "[Research]: "
+labels:
+  - research
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first, and keep the issue on one question.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Research question
+      description: The question that a requirement asks, in general terms.
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirement
+    attributes:
+      label: Requirement
+      description: The requirement that the question serves, and where it comes from.
+    validations:
+      required: true
+
+  - type: textarea
+    id: empty-cases
+    attributes:
+      label: Empty cases
+      description: No user, no subscriber, no input, or the option turned off.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: Current state
+      description: The code that the answer affects, with files and lines.
+
+  - type: textarea
+    id: known
+    attributes:
+      label: Known so far
+      description: Sources already read, and what each one settles.
+
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: The condition that closes this issue.
+    validations:
+      required: true
+
+  - type: input
+    id: related
+    attributes:
+      label: Related issues

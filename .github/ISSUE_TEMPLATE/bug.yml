@@ -1,0 +1,90 @@
+name: Bug
+description: Existing behavior is wrong.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first, and keep the report on one problem.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I included enough detail to reproduce or investigate the problem.
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the project is affected?
+      options:
+        - src/EFPagination
+        - src/EFPagination.AspNetCore
+        - src/EFPagination.Analyzers
+        - Samples or benchmarks
+        - Build, CI, or release tooling
+        - Docs
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A minimal, deterministic repro.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: The correct behavior, with the docs, spec or source that defines it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Blocks work completely
+        - Major degradation or frequent failure
+        - Minor bug or occasional failure
+        - Cosmetic issue
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 3.2.0, or main @ abc1234
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or stack traces
+      description: The most relevant output only. Redact secrets.
+      render: shell
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround

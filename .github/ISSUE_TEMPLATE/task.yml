@@ -1,0 +1,55 @@
+name: Task
+description: A settled change to make.
+title: "[Task]: "
+labels:
+  - task
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first, and keep the issue on one change.
+
+  - type: textarea
+    id: work
+    attributes:
+      label: Work
+      description: The change, in one or two sentences.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: Current state
+      description: The code that the change replaces, with files and lines.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: The requirement, gap or defect that the change closes, with its source.
+    validations:
+      required: true
+
+  - type: textarea
+    id: decisions
+    attributes:
+      label: Decisions
+      description: The settled choices that the change follows, each with its source.
+
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: The condition that closes this issue.
+    validations:
+      required: true
+
+  - type: input
+    id: related
+    attributes:
+      label: Related issues
+      description: Issues that this change depends on.

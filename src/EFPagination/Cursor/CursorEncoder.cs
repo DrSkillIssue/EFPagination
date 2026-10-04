@@ -1,4 +1,5 @@
 using System.Buffers.Text;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using EFPagination.Internal;
@@ -111,7 +112,8 @@ internal static class CursorEncoder
         public void Write(ref CursorWriter writer)
         {
             var columns = _definition.Columns;
-            var count = Math.Min(columns.Length, _bindings.Length);
+            var count = columns.Length;
+            Debug.Assert(_bindings.Length == count);
             WriteHeader(ref writer, _options, _definition.SchemaFingerprint, count);
             var nullMaskStart = writer.ReserveZeros((count + 7) >>> 3);
             for (var i = 0; i < count; i++)

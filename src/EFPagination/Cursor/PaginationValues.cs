@@ -11,9 +11,15 @@ public readonly record struct PaginationValues<T>
 {
     internal static PaginationValues<T> Empty => default;
 
-    internal PaginationValues(ColumnBinding[] bindings) => Bindings = bindings;
+    internal PaginationValues(PaginationQueryDefinition<T> definition, ColumnBinding[] bindings)
+    {
+        Definition = definition;
+        Bindings = bindings;
+    }
 
-    internal ColumnBinding[]? Bindings { get; init; }
+    internal PaginationQueryDefinition<T>? Definition { get; }
+
+    internal ColumnBinding[]? Bindings { get; }
 
     /// <summary>
     /// Gets the number of ordered boundary values stored in this instance.
@@ -60,6 +66,15 @@ public readonly record struct PaginationValues<T>
             columns[i].WriteBindingFromBoxed(values[i], binding);
             bindings[i] = binding;
         }
-        return new PaginationValues<T>(bindings);
+        return new PaginationValues<T>(definition, bindings);
+    }
+
+    // Each binding is typed by the column of the definition that created it, so the values are read only by a
+    // definition with the same fingerprint: the same column names, types and directions.
+    internal ColumnBinding[] GetBindingsFor(PaginationQueryDefinition<T> definition, string paramName)
+    {
+        if (Definition is null || Definition.SchemaFingerprint != definition.SchemaFingerprint)
+            throw new ArgumentException("The values were not created for this pagination definition.", paramName);
+        return Bindings!;
     }
 }

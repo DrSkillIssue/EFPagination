@@ -48,6 +48,7 @@ public static class PaginationExtensions
     /// <returns>A <see cref="PaginationContext{T}"/> containing the ordered, optionally filtered query.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="source"/> or <paramref name="queryDefinition"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">No columns were registered with the definition.</exception>
+    /// <exception cref="ArgumentException"><paramref name="referenceValues"/> is not empty and was not created for <paramref name="queryDefinition"/>.</exception>
     public static PaginationContext<T> Paginate<T>(
         this IQueryable<T> source,
         PaginationQueryDefinition<T> queryDefinition,
@@ -57,7 +58,8 @@ public static class PaginationExtensions
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(queryDefinition);
 
-        return source.PaginateCore(queryDefinition.Columns, direction, referenceValues.Bindings, queryDefinition.PredicateTemplate);
+        var bindings = referenceValues.IsEmpty ? null : referenceValues.GetBindingsFor(queryDefinition, nameof(referenceValues));
+        return source.PaginateCore(queryDefinition.Columns, direction, bindings, queryDefinition.PredicateTemplate);
     }
 
     /// <summary>

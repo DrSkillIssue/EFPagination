@@ -94,6 +94,55 @@ public class PaginationCursorIntegrationTests
     }
 
     [Fact]
+    public void Encode_ValuesOfAnotherDefinitionWithOtherColumnTypes_Throws()
+    {
+        var byId = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var byCreated = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created));
+        var values = PaginationValues<MainModel>.Create(byId, 10);
+
+        var encode = () => PaginationCursor.Encode(byCreated, values);
+
+        encode.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("values");
+    }
+
+    [Fact]
+    public void Encode_ValuesOfAnotherDefinitionWithMoreColumns_Throws()
+    {
+        var byId = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var byStringThenId = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.String).Ascending(x => x.Id));
+        var values = PaginationValues<MainModel>.Create(byId, 10);
+
+        var encode = () => PaginationCursor.Encode(byStringThenId, values);
+
+        encode.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("values");
+    }
+
+    [Fact]
+    public void Paginate_ValuesOfAnotherDefinition_Throws()
+    {
+        var byId = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var byCreated = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Created));
+        var values = PaginationValues<MainModel>.Create(byId, 10);
+
+        var paginate = () => _dbContext.MainModels.Paginate(byCreated, PaginationDirection.Forward, values);
+
+        paginate.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("referenceValues");
+    }
+
+    [Fact]
+    public async Task Paginate_ValuesOfAnEqualDefinitionBuiltSeparately_ReturnsTheRowsAfterThem()
+    {
+        var first = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var second = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var values = PaginationValues<MainModel>.Create(first, 10);
+
+        var ids = await _dbContext.MainModels.Paginate(second, PaginationDirection.Forward, values).Query.Take(3).Select(x => x.Id).ToListAsync();
+
+        ids.Should().Equal(11, 12, 13);
+        PaginationCursor.Encode(second, values).Should().Be(PaginationCursor.Encode(first, values));
+    }
+
+    [Fact]
     public void EncodeDecode_RoundTrips_TimeSpan_WithLargeDayComponent()
     {
         var definition = PaginationQuery.Build<AllPrimitivesModel>(b => b.Ascending(x => x.TimeSpan));

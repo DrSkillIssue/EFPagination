@@ -50,13 +50,14 @@ public static class PaginationCursor
     /// <param name="options">Optional cursor metadata (logical sort key, total count, signing key).</param>
     /// <returns>A Base64Url-encoded cursor token.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="definition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="values"/> were not created for <paramref name="definition"/>.</exception>
     public static string Encode<T>(
         PaginationQueryDefinition<T> definition,
         PaginationValues<T> values,
         PaginationCursorOptions options = default)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        return CursorEncoder.EncodeSchemaBoundFromBindings(definition, values.Bindings ?? [], options);
+        return CursorEncoder.EncodeSchemaBoundFromBindings(definition, values.GetBindingsFor(definition, nameof(values)), options);
     }
 
     /// <summary>
@@ -94,7 +95,7 @@ public static class PaginationCursor
 
         if (CursorDecoder.TryDecodeWithDefinition(encoded, definition, bindings, signingKey, out metadata))
         {
-            values = new PaginationValues<T>(bindings);
+            values = new PaginationValues<T>(definition, bindings);
             return true;
         }
 

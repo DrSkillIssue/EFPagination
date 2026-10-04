@@ -3,6 +3,7 @@ using System.Globalization;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using EFPagination.Cursor;
 using EFPagination.TestModels;
 using Xunit;
 
@@ -89,7 +90,7 @@ public class PaginationCursorIntegrationTests
         PaginationCursor.TryDecode("", definition, out _, out _).Should().BeFalse();
         PaginationCursor.TryDecode("%%%", definition, out _, out _).Should().BeFalse();
         PaginationCursor.TryDecode(EncodeRawBytes([0x00]), definition, out _, out _).Should().BeFalse();  // bad version
-        PaginationCursor.TryDecode(EncodeRawBytes([0x04, 0xFF]), definition, out _, out _).Should().BeFalse();  // truncated
+        PaginationCursor.TryDecode(EncodeRawBytes([CursorFormat.Version, 0xFF]), definition, out _, out _).Should().BeFalse();  // truncated
     }
 
     [Fact]

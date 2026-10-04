@@ -280,7 +280,7 @@ internal sealed class PaginationColumn<T, TColumn>(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override bool TryWriteCursorValueFromBinding(ColumnBinding binding, ref CursorWriter writer)
     {
-        var value = Unsafe.As<ColumnBinding<TColumn>>(binding).Value;
+        var value = ((ColumnBinding<TColumn>)binding).Value;
         if (default(TColumn) is null && value is null)
             return false;
         WriteValue(ref writer, value);
@@ -293,7 +293,7 @@ internal sealed class PaginationColumn<T, TColumn>(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override void DecodeCursorValueInto(ref CursorReader reader, ColumnBinding binding)
     {
-        Unsafe.As<ColumnBinding<TColumn>>(binding).Value = ReadValue(ref reader);
+        ((ColumnBinding<TColumn>)binding).Value = ReadValue(ref reader);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -310,7 +310,7 @@ internal sealed class PaginationColumn<T, TColumn>(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override void WriteBindingFromBoxed(object? boxed, ColumnBinding binding)
     {
-        var typed = Unsafe.As<ColumnBinding<TColumn>>(binding);
+        var typed = (ColumnBinding<TColumn>)binding;
         if (boxed is null)
         {
             if (default(TColumn) is not null)
@@ -326,7 +326,7 @@ internal sealed class PaginationColumn<T, TColumn>(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override void WriteBindingFromReference(object reference, ColumnBinding binding)
     {
-        Unsafe.As<ColumnBinding<TColumn>>(binding).Value = ObtainValueTyped(reference);
+        ((ColumnBinding<TColumn>)binding).Value = ObtainValueTyped(reference);
     }
 
     [DoesNotReturn]

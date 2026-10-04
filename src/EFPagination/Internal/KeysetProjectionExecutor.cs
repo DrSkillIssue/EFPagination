@@ -113,7 +113,7 @@ internal static class KeysetProjectionExecutor
             for (var i = 0; i < columns.Length; i++) bindings[i] = columns[i].CreateBinding();
             page.ExtractKeysIntoBindings(page.Count - 1, bindings);
 
-            context = builder.Source.Paginate(definition, PaginationDirection.Forward, new PaginationValues<T>(bindings));
+            context = builder.Source.Paginate(definition, PaginationDirection.Forward, new PaginationValues<T>(definition, bindings));
         }
     }
 
@@ -127,6 +127,6 @@ internal static class KeysetProjectionExecutor
         var bindings = new ColumnBinding[columns.Length];
         for (var i = 0; i < columns.Length; i++) bindings[i] = columns[i].CreateBinding();
         page.ExtractKeysIntoBindings(index, bindings);
-        return PaginationCursor.Encode(definition, new PaginationValues<T>(bindings), options);
+        return PaginationCursor.Encode(definition, new PaginationValues<T>(definition, bindings), options);
     }
 }

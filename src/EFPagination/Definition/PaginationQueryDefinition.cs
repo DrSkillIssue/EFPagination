@@ -23,11 +23,11 @@ public sealed class PaginationQueryDefinition<T>
 
         // Any process may decode a cursor, so the hash is FNV-1a (draft-eastlake-fnv): string.GetHashCode is seeded
         // per process (Marvin.DefaultSeed). Type.FullName names generic arguments with their assembly version;
-        // ToString() does not.
+        // ToString() does not. A computed column has no property name, so its expression's structure stands in for it.
         var hash = FnvOffsetBasis;
         foreach (var column in columns)
         {
-            hash = Append(hash, column.PropertyName);
+            hash = Append(hash, column.PropertyName ?? ColumnShape.Write(column.LambdaExpression));
             hash = Append(hash, column.Type.ToString());
             hash = (hash ^ (column.IsDescending ? 1u : 0u)) * FnvPrime;
         }

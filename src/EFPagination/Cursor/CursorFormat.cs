@@ -9,7 +9,7 @@ internal static class CursorFormat
     /// <summary>
     /// The current cursor wire-format version byte. Incremented on incompatible payload changes.
     /// </summary>
-    public const byte Version = 0x04;
+    public const byte Version = 0x05;
 
     /// <summary>
     /// Flag bit indicating the header carries a UTF-8 <c>SortBy</c> string.

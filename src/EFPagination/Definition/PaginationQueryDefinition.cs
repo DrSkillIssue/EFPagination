@@ -3,30 +3,44 @@ using EFPagination.Internal;
 namespace EFPagination;
 
 /// <summary>
-/// A prebuilt, reusable pagination query definition. Stores the pagination columns and a cached
-/// predicate template for efficient per-call expression tree instantiation.
-/// Build once via <see cref="PaginationQuery.Build{T}(Action{PaginationBuilder{T}})"/> and reuse across requests.
+/// Represents the ordered key columns of a keyset-paginated query.
 /// </summary>
+/// <remarks>
+/// Build it once with <see cref="PaginationQuery.Build{T}(Action{PaginationBuilder{T}})"/> and reuse it across
+/// requests. A cursor decodes only with a definition of the same column names, types and directions, in any process.
+/// </remarks>
 /// <typeparam name="T">The entity type.</typeparam>
 public sealed class PaginationQueryDefinition<T>
 {
+    private const uint FnvOffsetBasis = 2166136261;
+    private const uint FnvPrime = 16777619;
+
     internal PaginationQueryDefinition(
         PaginationColumn<T>[] columns)
     {
         Columns = columns;
         PredicateTemplate = FilterPredicateStrategy.CreateTemplate(columns);
 
-        uint hash = 2166136261;
-        for (var i = 0; i < columns.Length; i++)
+        // Any process may decode a cursor, so the hash is FNV-1a (draft-eastlake-fnv): string.GetHashCode is seeded
+        // per process (Marvin.DefaultSeed). Type.FullName names generic arguments with their assembly version;
+        // ToString() does not.
+        var hash = FnvOffsetBasis;
+        foreach (var column in columns)
         {
-            hash ^= (uint)(columns[i].PropertyName?.GetHashCode(StringComparison.Ordinal) ?? 0);
-            hash *= 16777619;
-            hash ^= (uint)(columns[i].Type.FullName?.GetHashCode(StringComparison.Ordinal) ?? 0);
-            hash *= 16777619;
-            hash ^= columns[i].IsDescending ? 1u : 0u;
-            hash *= 16777619;
+            hash = Append(hash, column.PropertyName);
+            hash = Append(hash, column.Type.ToString());
+            hash = (hash ^ (column.IsDescending ? 1u : 0u)) * FnvPrime;
         }
         SchemaFingerprint = hash;
+
+        // The length goes first, so that ("ab", "c") and ("a", "bc") hash apart.
+        static uint Append(uint hash, string? value)
+        {
+            hash = (hash ^ (uint)(value?.Length ?? 0)) * FnvPrime;
+            foreach (var c in value.AsSpan())
+                hash = (hash ^ c) * FnvPrime;
+            return hash;
+        }
     }
 
     internal PaginationColumn<T>[] Columns { get; }

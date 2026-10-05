@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -45,10 +46,11 @@ internal sealed class ColumnShape : ExpressionVisitor
 
     protected override Expression VisitMember(MemberExpression node)
     {
-        if (node.Expression is ConstantExpression { Value: { } closure } && closure.GetType().IsDefined(typeof(CompilerGeneratedAttribute), inherit: false))
+        if (node.Expression is ConstantExpression { Value: { } closure }
+            && closure.GetType().IsDefined(typeof(CompilerGeneratedAttribute), inherit: false))
         {
             _text.Append(node.Member.Name).Append('=');
-            AppendValue(((System.Reflection.FieldInfo)node.Member).GetValue(closure));
+            AppendValue(((FieldInfo)node.Member).GetValue(closure));
             return node;
         }
 

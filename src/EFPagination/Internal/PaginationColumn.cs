@@ -196,9 +196,9 @@ internal sealed class PaginationColumn<T, TColumn>(
     private static readonly EnumIo<TColumn>? s_enumIo = EnumIo<TColumn>.Instance;
 
     private readonly ConcurrentDictionary<Type, Func<object, TColumn>> _referenceTypeToCompiledAccessMap = new();
-    private volatile Type? _lastAccessType;
-    private volatile Func<object, TColumn>? _lastAccessFunc;
-    private Expression<Func<T, TColumn>>? _cachedOrderByLambda;
+    private AccessEntry? _lastAccess;
+    private readonly Expression<Func<T, TColumn>> _orderByLambda =
+        AdaptingExpressionVisitor.AdaptParameter(expression, Expression.Parameter(typeof(T), "x"));
 
     public new Expression<Func<T, TColumn>> LambdaExpression => (Expression<Func<T, TColumn>>)base.LambdaExpression;
 
@@ -206,14 +206,6 @@ internal sealed class PaginationColumn<T, TColumn>(
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override Expression MakeAccessExpression(ParameterExpression parameter) => AdaptingExpressionVisitor.AdaptParameter(LambdaExpression, parameter).Body;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private Expression<Func<T, TColumn>> GetOrderByLambda()
-    {
-        return _cachedOrderByLambda ??= AdaptingExpressionVisitor.AdaptParameter(
-            LambdaExpression,
-            Expression.Parameter(typeof(T), "x"));
-    }
 
     public override IOrderedQueryable<T> ApplyOrderBy(IQueryable<T> query, PaginationDirection direction)
     {
@@ -230,8 +222,7 @@ internal sealed class PaginationColumn<T, TColumn>(
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private IOrderedQueryable<T> ApplyDirect(IQueryable<T> query, MethodInfo method)
     {
-        var lambda = GetOrderByLambda();
-        var call = Expression.Call(method, query.Expression, Expression.Quote(lambda));
+        var call = Expression.Call(method, query.Expression, Expression.Quote(_orderByLambda));
         return (IOrderedQueryable<T>)query.Provider.CreateQuery<T>(call);
     }
 
@@ -239,13 +230,9 @@ internal sealed class PaginationColumn<T, TColumn>(
     private TColumn ObtainValueTyped(object reference)
     {
         var referenceType = reference.GetType();
-
-        var lastType = _lastAccessType;
-        var lastFunc = _lastAccessFunc;
-        if (lastType == referenceType && lastFunc is not null)
-        {
-            return lastFunc(reference);
-        }
+        var last = Volatile.Read(ref _lastAccess);
+        if (last is not null && last.Type == referenceType)
+            return last.Access(reference);
 
         return ResolveAccessor(referenceType)(reference);
     }
@@ -262,9 +249,16 @@ internal sealed class PaginationColumn<T, TColumn>(
             },
             LambdaExpression);
 
-        _lastAccessType = referenceType;
-        _lastAccessFunc = compiledAccess;
+        Volatile.Write(ref _lastAccess, new AccessEntry(referenceType, compiledAccess));
         return compiledAccess;
+    }
+
+    // One object, so that a reader never pairs a type with another type's accessor (as CacheDict<TKey, TValue>.Entry
+    // in System.Linq.Expressions keeps a key and its value together).
+    private sealed class AccessEntry(Type type, Func<object, TColumn> access)
+    {
+        public readonly Type Type = type;
+        public readonly Func<object, TColumn> Access = access;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

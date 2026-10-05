@@ -1,16 +1,15 @@
+using System.Diagnostics;
 using EFPagination.Internal;
 
 namespace EFPagination;
 
 /// <summary>
-/// Ordered pagination boundary values bound to a specific <see cref="PaginationQueryDefinition{T}"/>.
-/// Allocation-free wrapper over the underlying typed bindings array.
+/// Represents the boundary values of a page, in the column order of the <see cref="PaginationQueryDefinition{T}"/>
+/// that created them.
 /// </summary>
 /// <typeparam name="T">The entity type for the associated pagination definition.</typeparam>
 public readonly record struct PaginationValues<T>
 {
-    internal static PaginationValues<T> Empty => default;
-
     internal PaginationValues(PaginationQueryDefinition<T> definition, ColumnBinding[] bindings)
     {
         Definition = definition;
@@ -28,21 +27,21 @@ public readonly record struct PaginationValues<T>
     public int Count => Bindings?.Length ?? 0;
 
     /// <summary>
-    /// Gets a value indicating whether this instance has no bound values.
+    /// Gets a value that indicates whether this instance holds no values.
     /// </summary>
-    /// <value><see langword="true"/> when no boundary values are stored; otherwise <see langword="false"/>.</value>
+    /// <value><see langword="true"/> if this instance holds no values; otherwise, <see langword="false"/>.</value>
     public bool IsEmpty => Bindings is null || Bindings.Length == 0;
 
     /// <summary>
-    /// Creates a new <see cref="PaginationValues{T}"/> from the specified ordered values against
-    /// the supplied definition. Values must be provided in column order and will be coerced to
-    /// each column's CLR type.
+    /// Creates the boundary values of a page of <paramref name="definition"/>.
     /// </summary>
-    /// <param name="definition">The pagination query definition that determines column types and count.</param>
-    /// <param name="values">The ordered boundary values. Must match the definition's column count.</param>
-    /// <returns>A new <see cref="PaginationValues{T}"/> with the supplied values bound.</returns>
+    /// <param name="definition">The pagination query definition that the values belong to.</param>
+    /// <param name="values">The values, one per column of <paramref name="definition"/> in column order, each of its column's type.</param>
+    /// <returns>The boundary values.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="definition"/> or <paramref name="values"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="values"/> length does not match the definition column count.</exception>
+    /// <exception cref="ArgumentException"><paramref name="values"/> does not hold one value per column.</exception>
+    /// <exception cref="InvalidCastException">A value is not of its column's type.</exception>
+    /// <exception cref="InvalidOperationException">A value is <see langword="null"/> for a column that does not allow <see langword="null"/>.</exception>
 #pragma warning disable CA1000
     public static PaginationValues<T> Create(
         PaginationQueryDefinition<T> definition,
@@ -68,6 +67,7 @@ public readonly record struct PaginationValues<T>
         }
         return new PaginationValues<T>(definition, bindings);
     }
+#pragma warning restore CA1000
 
     // Each binding is typed by the column of the definition that created it, so the values are read only by a
     // definition with the same fingerprint: the same column names, types and directions.
@@ -75,6 +75,7 @@ public readonly record struct PaginationValues<T>
     {
         if (Definition is null || Definition.SchemaFingerprint != definition.SchemaFingerprint)
             throw new ArgumentException("The values were not created for this pagination definition.", paramName);
-        return Bindings!;
+        Debug.Assert(Bindings is not null);
+        return Bindings;
     }
 }

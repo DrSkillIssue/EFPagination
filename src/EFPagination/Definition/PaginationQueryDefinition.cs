@@ -34,9 +34,9 @@ public sealed class PaginationQueryDefinition<T>
         SchemaFingerprint = hash;
 
         // The length goes first, so that ("ab", "c") and ("a", "bc") hash apart.
-        static uint Append(uint hash, string? value)
+        static uint Append(uint hash, string value)
         {
-            hash = (hash ^ (uint)(value?.Length ?? 0)) * FnvPrime;
+            hash = (hash ^ (uint)value.Length) * FnvPrime;
             foreach (var c in value.AsSpan())
                 hash = (hash ^ c) * FnvPrime;
             return hash;
@@ -46,8 +46,6 @@ public sealed class PaginationQueryDefinition<T>
     internal PaginationColumn<T>[] Columns { get; }
 
     internal CachedPredicateTemplate<T> PredicateTemplate { get; }
-
-    internal int ColumnCount => Columns.Length;
 
     internal uint SchemaFingerprint { get; }
 }

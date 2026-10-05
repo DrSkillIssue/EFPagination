@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,4 +74,26 @@ public class ThreadSafetyTests(SqliteDatabaseFixture fixture)
         results[PaginationDirection.Forward].Should().AllSatisfy(x => x.Id.Should().BeGreaterThan(50));
         results[PaginationDirection.Backward].Should().AllSatisfy(x => x.Id.Should().BeLessThan(50));
     }
+
+    [Fact]
+    public async Task Encode_TwoReferenceTypesConcurrently_DoesNotThrow()
+    {
+        var definition = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        MainModel[] references = [new FirstDerivedModel { Id = 1 }, new SecondDerivedModel { Id = 2 }];
+        var stopwatch = Stopwatch.StartNew();
+
+        var workers = Enumerable.Range(0, Environment.ProcessorCount * 2).Select(worker => Task.Run(() =>
+        {
+            for (var i = worker; stopwatch.Elapsed < TimeSpan.FromSeconds(3); i++)
+                PaginationCursor.Encode(definition, references[i % 2]);
+        })).ToArray();
+
+        var all = () => Task.WhenAll(workers);
+
+        await all.Should().NotThrowAsync();
+    }
+
+    private sealed class FirstDerivedModel : MainModel;
+
+    private sealed class SecondDerivedModel : MainModel;
 }

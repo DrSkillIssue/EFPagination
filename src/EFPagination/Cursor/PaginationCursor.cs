@@ -27,7 +27,9 @@ public static class PaginationCursor
     /// <typeparam name="T">The entity type associated with <paramref name="definition"/>.</typeparam>
     /// <param name="definition">The pagination query definition that determines the column order.</param>
     /// <param name="reference">The entity (or DTO with matching property names) supplying the boundary values.</param>
-    /// <param name="options">Optional cursor metadata (logical sort key, total count, signing key).</param>
+    /// <param name="options">
+    /// The logical sort key and total count to write into the cursor, and the key to sign it with.
+    /// </param>
     /// <returns>A Base64Url-encoded cursor token.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="definition"/> or <paramref name="reference"/> is <see langword="null"/>.</exception>
     /// <exception cref="IncompatibleReferenceException"><paramref name="reference"/> is missing a property required by the pagination definition.</exception>
@@ -47,7 +49,9 @@ public static class PaginationCursor
     /// <typeparam name="T">The entity type associated with <paramref name="definition"/>.</typeparam>
     /// <param name="definition">The pagination query definition that determines the column order.</param>
     /// <param name="values">The typed boundary values, typically obtained from <see cref="TryDecode{T}"/>.</param>
-    /// <param name="options">Optional cursor metadata (logical sort key, total count, signing key).</param>
+    /// <param name="options">
+    /// The logical sort key and total count to write into the cursor, and the key to sign it with.
+    /// </param>
     /// <returns>A Base64Url-encoded cursor token.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="definition"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="values"/> were not created for <paramref name="definition"/>.</exception>
@@ -67,17 +71,18 @@ public static class PaginationCursor
     /// <param name="encoded">The encoded cursor token.</param>
     /// <param name="definition">The pagination query definition that determines the expected value order and CLR types.</param>
     /// <param name="values">
-    /// When this method returns <see langword="true"/>, contains the decoded values bound to <paramref name="definition"/>.
-    /// When <see langword="false"/>, contains <see cref="PaginationValues{T}.Empty"/>.
+    /// When this method returns, contains the decoded values of <paramref name="definition"/>, or empty values if
+    /// decoding failed. This parameter is treated as uninitialized.
     /// </param>
     /// <param name="metadata">
-    /// When this method returns <see langword="true"/>, contains the decoded sort key and total count (when present in the payload).
+    /// When this method returns, contains the sort key and total count the cursor carries, if any. This parameter is
+    /// treated as uninitialized.
     /// </param>
     /// <param name="signingKey">
-    /// The HMAC-SHA256 signing key for verification, or <see langword="null"/> to skip verification.
-    /// When non-<see langword="null"/>, signed cursors must verify successfully or this method returns <see langword="false"/>.
+    /// The HMAC-SHA256 key the cursor was signed with, or <see langword="null"/> for an unsigned cursor. A signed
+    /// cursor decodes only with its key, and an unsigned cursor only with <see langword="null"/>.
     /// </param>
-    /// <returns><see langword="true"/> if the cursor was decoded successfully; otherwise <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> if the cursor was decoded successfully; otherwise, <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="definition"/> is <see langword="null"/>.</exception>
     public static bool TryDecode<T>(
         ReadOnlySpan<char> encoded,
@@ -99,7 +104,7 @@ public static class PaginationCursor
             return true;
         }
 
-        values = PaginationValues<T>.Empty;
+        values = default;
         return false;
     }
 }

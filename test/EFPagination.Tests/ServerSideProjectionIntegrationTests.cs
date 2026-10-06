@@ -1,4 +1,5 @@
 #nullable enable
+using System.Reflection;
 using EFPagination.TestModels;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -211,5 +212,22 @@ public class ServerSideProjectionIntegrationTests
         };
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task TakeAsync_DefinitionsWithEqualFingerprints_EncodeTheirOwnKeys()
+    {
+        var byId = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.Id));
+        var byStringThenId = PaginationQuery.Build<MainModel>(b => b.Ascending(x => x.String).Ascending(x => x.Id));
+        // A 32-bit fingerprint collides by chance; force the collision instead of searching for one.
+        typeof(PaginationQueryDefinition<MainModel>)
+            .GetField($"<{nameof(byId.SchemaFingerprint)}>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(byStringThenId, byId.SchemaFingerprint);
+        await _db.MainModels.Keyset(byId).TakeAsync(5, x => new ItemDto(x.Id, x.String, x.Created));
+
+        var page = await _db.MainModels.Keyset(byStringThenId).TakeAsync(5, x => new ItemDto(x.Id, x.String, x.Created));
+
+        var last = page.Items[^1];
+        page.NextCursor.Should().Be(PaginationCursor.Encode(byStringThenId, new MainModel { Id = last.EntityId, String = last.String }));
     }
 }

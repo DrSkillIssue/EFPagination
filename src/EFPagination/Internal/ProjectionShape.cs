@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -71,15 +70,17 @@ internal abstract class ProjectionMaterializedPage<T, TOut> where T : class
 }
 
 /// <summary>
-/// Per-definition cache of arity-closed <see cref="ProjectionShape{T, TOut}"/> instances. The
-/// closed generic shape is built once per <see cref="PaginationQueryDefinition{T}.SchemaFingerprint"/>
-/// and reused across calls.
+/// Caches the arity-closed <see cref="ProjectionShape{T, TOut}"/> of each definition.
 /// </summary>
+/// <remarks>
+/// The table matches a definition by reference, so two definitions never share a shape, and holds it weakly, so a
+/// shape is released with its definition.
+/// </remarks>
 /// <typeparam name="T">The entity type.</typeparam>
 /// <typeparam name="TOut">The projected DTO type.</typeparam>
 internal static class ProjectionShapeCache<T, TOut> where T : class
 {
-    private static readonly ConcurrentDictionary<uint, ProjectionShape<T, TOut>> s_cache = new();
+    private static readonly ConditionalWeakTable<PaginationQueryDefinition<T>, ProjectionShape<T, TOut>> s_cache = new();
 
     /// <summary>
     /// Returns the cached <see cref="ProjectionShape{T, TOut}"/> for <paramref name="definition"/>,
@@ -89,7 +90,7 @@ internal static class ProjectionShapeCache<T, TOut> where T : class
     /// <returns>The matching <see cref="ProjectionShape{T, TOut}"/>.</returns>
     /// <exception cref="NotSupportedException"><paramref name="definition"/> has fewer than 1 or more than 8 key columns.</exception>
     public static ProjectionShape<T, TOut> Get(PaginationQueryDefinition<T> definition)
-        => s_cache.GetOrAdd(definition.SchemaFingerprint, static (_, def) => Build(def), definition);
+        => s_cache.GetOrAdd(definition, static def => Build(def));
 
     private static ProjectionShape<T, TOut> Build(PaginationQueryDefinition<T> definition)
     {

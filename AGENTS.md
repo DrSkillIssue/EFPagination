@@ -53,8 +53,7 @@ CI (`.github/workflows/ci.yml`, `lint.yml`) runs these; run them before a PR:
 - Conventional commit titles, plain language: `fix(cursor): a cursor decodes in every process that issued it`. PRs are
   squash-merged, so the PR title is the commit title on `main`.
 - Body: follow `.github/pull_request_template.md`. The problem in a sentence or two, then how you fixed it, then
-  `Closes #N`. Name any breaking change, and any change to the cursor format, in its own line. End with the model and
-  harness that did the work.
+  `Closes #N`. Name any breaking change, and any change to the cursor format, in its own line.
 
 ## Work tracking
 
